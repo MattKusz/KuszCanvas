@@ -7,7 +7,12 @@ import {
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
 
-import { isStickyNoteElement, newStickyNoteElement } from "@excalidraw/element";
+import {
+  getStickyNoteCreationAngle,
+  isStickyNoteElement,
+  newElementWith,
+  newStickyNoteElement,
+} from "@excalidraw/element";
 
 import type {
   ExcalidrawNonSelectionElement,
@@ -51,7 +56,7 @@ export const DRAGGABLE_TOOLS: Partial<Record<ToolType, DraggableTool>> = {
     createElement: (app, center) => {
       const size = DEFAULT_STICKY_NOTE_SIZE;
       const { state } = app;
-      return newStickyNoteElement({
+      const note = newStickyNoteElement({
         type: "stickynote",
         ...centered(center, size, size),
         baseHeight: size,
@@ -65,6 +70,10 @@ export const DRAGGABLE_TOOLS: Partial<Record<ToolType, DraggableTool>> = {
         roundness: app.getCurrentItemRoundness("stickynote"),
         locked: false,
         frameId: app.getTopLayerFrameAtSceneCoords(center)?.id ?? null,
+      });
+      // a placed note sits slightly askew, like paper stuck on a board
+      return newElementWith(note, {
+        angle: getStickyNoteCreationAngle(note.seed),
       });
     },
     onDrop: (app, element) => {

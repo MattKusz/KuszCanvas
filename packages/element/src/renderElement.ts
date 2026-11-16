@@ -31,8 +31,8 @@ import {
   isMarkdownTextRenderingEnabled, // KuszCanvas -- host render flags
   STICKY_NOTE_EDGE_SHADOW_OPACITY,
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
+  STICKY_NOTE_BOTTOM_SHADE,
   STICKY_NOTE_FOOTER,
-  STICKY_NOTE_SHADOW_OPACITY,
   DEFAULT_ZOOM,
 } from "@excalidraw/common";
 
@@ -81,9 +81,13 @@ import { getCornerRadius } from "./utils";
 
 import { ShapeCache } from "./shape";
 import {
+  getStickyNoteFillColor,
   getStickyNoteFooter,
   getStickyNotePathCommands,
+  getStickyNoteShadow,
+  getStickyNoteShadowExtent,
   type StickyNotePathCommand,
+  type StickyNoteShadow,
 } from "./stickyNote";
 
 import type { RenderEnvironment } from "./renderEnvironment";
@@ -109,8 +113,16 @@ const isPendingImageElement = (
   isInitializedImageElement(element) &&
   !renderConfig.imageCache.has(element.fileId);
 
-const getCanvasPadding = (element: ExcalidrawElement) => {
+/**
+ * Margin, in device px before zoom, around an element's cached canvas. Scene
+ * px of margin = padding / device scale.
+ */
+export const getCanvasPadding = (element: ExcalidrawElement) => {
   switch (element.type) {
+    case "stickynote":
+      // the blurred shadow reaches past the paper; × 4 keeps it unclipped up
+      // to a device scale of 4
+      return Math.max(20, Math.ceil(getStickyNoteShadowExtent(element) * 4));
     case "freedraw":
       return element.strokeWidth * 12;
     case "text":
@@ -437,6 +449,57 @@ const fillStickyNoteShape = (
   context.fill();
 };
 
+/**
+ * Paints only the blurred shadow of the shadow shape. The shape itself is
+ * filled well off the canvas and its shadow offset back into place. Canvas
+ * shadow offsets and blur ignore the current transform, so both are mapped
+ * through it here; that keeps the shadow right on the zoomed element canvas
+ * and on the rotated export context alike.
+ */
+const fillStickyNoteShadow = (
+  context: CanvasRenderingContext2D,
+  shadow: StickyNoteShadow,
+) => {
+  const { a, b, c, d } =
+    typeof context.getTransform === "function"
+      ? context.getTransform()
+      : { a: 1, b: 0, c: 0, d: 1 };
+  const scale = Math.hypot(a, b) || 1;
+  // far enough, in element px, that the source lands past any canvas edge
+  const away = (2 * (context.canvas.width + context.canvas.height)) / scale + 1;
+
+  withSavedContext(context, () => {
+    context.fillStyle = "#000";
+    context.shadowColor = `rgba(0, 0, 0, ${shadow.opacity})`;
+    context.shadowBlur = shadow.blur * Math.sqrt(Math.abs(a * d - b * c));
+    // moving the source by -away along the element's x axis moves it by
+    // -away·(a, b) device px; the shadow moves it back
+    context.shadowOffsetX = away * a;
+    context.shadowOffsetY = away * b;
+    context.translate(-away, 0);
+    fillStickyNoteShape(context, shadow.commands);
+  });
+};
+
+/** darkens the bottom of the paper, where it starts to lift off the board */
+const shadeStickyNoteBottom = (
+  context: CanvasRenderingContext2D,
+  commands: StickyNotePathCommand[],
+  height: number,
+) => {
+  const { heightRatio, opacity } = STICKY_NOTE_BOTTOM_SHADE;
+  const gradient = context.createLinearGradient(
+    0,
+    height * (1 - heightRatio),
+    0,
+    height,
+  );
+  gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
+  gradient.addColorStop(1, `rgba(0, 0, 0, ${opacity})`);
+  context.fillStyle = gradient;
+  fillStickyNoteShape(context, commands);
+};
+
 const strokeStickyNoteEdge = (
   context: CanvasRenderingContext2D,
   commands: StickyNotePathCommand[],
@@ -477,18 +540,15 @@ const drawElementOnCanvas = (
   switch (element.type) {
     case "stickynote": {
       withSavedContext(context, () => {
-        context.fillStyle = `rgba(0, 0, 0, ${STICKY_NOTE_SHADOW_OPACITY})`;
-        fillStickyNoteShape(
-          context,
-          getStickyNotePathCommands(element, { shadow: true }),
-        );
+        fillStickyNoteShadow(context, getStickyNoteShadow(element));
 
         const commands = getStickyNotePathCommands(element);
         context.fillStyle = applyDarkModeFilter(
-          element.backgroundColor,
+          getStickyNoteFillColor(element),
           renderConfig.theme === THEME.DARK,
         );
         fillStickyNoteShape(context, commands);
+        shadeStickyNoteBottom(context, commands, element.height);
         strokeStickyNoteEdge(context, commands);
 
         // the label is absolute, so this cached canvas only goes stale at a

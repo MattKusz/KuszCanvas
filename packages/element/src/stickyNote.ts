@@ -11,14 +11,17 @@ import {
   STICKY_NOTE_MIN_SIZE,
   STICKY_NOTE_MIN_FONT_SIZE,
   STICKY_NOTE_PADDING,
-  STICKY_NOTE_SHADOW_OFFSET,
+  STICKY_NOTE_SHADOW_OPACITY,
   getFontString,
   getLineHeight,
   isTransparent,
   seededRandom,
+  shiftColorTone,
 } from "@excalidraw/common";
 
-import { clamp } from "@excalidraw/math";
+import { clamp, degreesToRadians } from "@excalidraw/math";
+
+import type { Degrees, Radians } from "@excalidraw/math";
 
 import { updateBoundElements } from "./binding";
 import { newElementWith } from "./mutateElement";
@@ -62,8 +65,51 @@ export type StickyNotePathCommand =
     };
 
 const STICKY_NOTE_RENDER_ROUGHNESS = [0, 1.5, 8] as const;
-const STICKY_NOTE_CORNER_RADIUS_RATIO = 0.04;
-const STICKY_NOTE_MAX_CORNER_RADIUS = 16;
+const STICKY_NOTE_CORNER_RADIUS_RATIO = 0.008;
+const STICKY_NOTE_MAX_CORNER_RADIUS = 3;
+/** curl lift multiplier per sloppiness level: a sketchier note curls more */
+const STICKY_NOTE_CURL_BY_ROUGHNESS = [0.6, 1, 1.4] as const;
+/** in a two-corner curl, the left corner lifts this share of the right one */
+const STICKY_NOTE_SECOND_CURL_RATIO = 0.6;
+/** the shadow's top edge drops this share of its bottom edge's offset */
+const STICKY_NOTE_SHADOW_TOP_RATIO = 0.3;
+// Salts for separate mulberry32 streams: the corner jitter already uses
+// `seed` and `seed + 1`, and these must not correlate with it.
+const STICKY_NOTE_VARIATION_SALT = 0x51ed27;
+const STICKY_NOTE_WAVINESS_SALT = 0x3c6ef3;
+const STICKY_NOTE_TILT_SALT = 0x2f6b1d;
+
+/** largest tilt a sticky note gets when it is placed with the tool: 1.5° */
+export const STICKY_NOTE_MAX_TILT = degreesToRadians(1.5 as Degrees);
+
+/**
+ * Bounds of the per-note, seed-derived look. All render-only: none of these
+ * is stored on the element.
+ */
+export const STICKY_NOTE_VARIATION_LIMITS = {
+  /** ± degrees of hue rotation of the paper color */
+  hueShift: 3,
+  /** ± HSL lightness (fraction of 1) added to the paper color */
+  lightnessShift: 0.04,
+  /** multiplier range of the curl lift */
+  curlDepth: [0.5, 1],
+  /** ± px sideways offset of the drop shadow */
+  shadowOffsetX: 1.5,
+  /** px downward offset range of the drop shadow's bottom edge */
+  shadowOffsetY: [2.5, 4.5],
+} as const;
+
+export type StickyNoteVariation = {
+  hueShift: number;
+  lightnessShift: number;
+  /** which bottom corners lift off the board */
+  curl: "left" | "right" | "both";
+  curlDepth: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  /** 0–1 share of the roughness jitter the edges bow by */
+  edgeWaviness: number;
+};
 
 export const normalizeStickyNoteStrokeColor = (
   strokeColor: string | null | undefined,
@@ -191,6 +237,9 @@ export const syncStickyNoteInk = <T extends ExcalidrawElement>(
 const jitter = (random: () => number, amount: number) =>
   (random() * 2 - 1) * amount;
 
+const lerp = (from: number, to: number, ratio: number) =>
+  from + (to - from) * ratio;
+
 const pointAtDistance = (
   from: StickyNoteRenderPoint,
   to: StickyNoteRenderPoint,
@@ -211,6 +260,112 @@ const pointAtDistance = (
   };
 };
 
+const assertFiniteSeed = (seed: number, caller: string) => {
+  if (!Number.isFinite(seed)) {
+    throw new Error(`${caller}: seed must be a finite number, got ${seed}`);
+  }
+};
+
+/** 0, 1 or 2: the sloppiness level the note's look is keyed on */
+const getRoughnessLevel = (element: ExcalidrawStickyNoteElement) =>
+  Math.max(0, Math.min(2, Math.round(element.roughness))) as 0 | 1 | 2;
+
+/** px the corners of a sketchy note wander, and the edges bow at most */
+const getJitterAmount = (element: ExcalidrawStickyNoteElement) =>
+  Math.min(
+    STICKY_NOTE_RENDER_ROUGHNESS[getRoughnessLevel(element)],
+    Math.min(element.width, element.height) * 0.012,
+  );
+
+/**
+ * The note's individual look, derived from its seed alone: the same seed
+ * renders the same on canvas and in SVG, across redraws and clients.
+ */
+export const getStickyNoteVariation = (seed: number): StickyNoteVariation => {
+  assertFiniteSeed(seed, "getStickyNoteVariation");
+  const limits = STICKY_NOTE_VARIATION_LIMITS;
+  const random = seededRandom(seed + STICKY_NOTE_VARIATION_SALT);
+  // the draw order is part of the look: reordering changes every note
+  const hueShift = jitter(random, limits.hueShift);
+  const lightnessShift = jitter(random, limits.lightnessShift);
+  const curlPick = random();
+  const curlDepth = lerp(limits.curlDepth[0], limits.curlDepth[1], random());
+  const shadowOffsetX = jitter(random, limits.shadowOffsetX);
+  const shadowOffsetY = lerp(
+    limits.shadowOffsetY[0],
+    limits.shadowOffsetY[1],
+    random(),
+  );
+  const edgeWaviness = random();
+
+  return {
+    hueShift,
+    lightnessShift,
+    curl: curlPick < 0.4 ? "right" : curlPick < 0.8 ? "left" : "both",
+    curlDepth,
+    shadowOffsetX,
+    shadowOffsetY,
+    edgeWaviness,
+  };
+};
+
+/**
+ * The tilt a note gets when the user places it with the sticky-note tool:
+ * within ±`STICKY_NOTE_MAX_TILT`, normalised to [0, 2π). Seed-derived so a
+ * test (or a replayed creation) gets the same angle.
+ */
+export const getStickyNoteCreationAngle = (seed: number): Radians => {
+  assertFiniteSeed(seed, "getStickyNoteCreationAngle");
+  const tilt = jitter(
+    seededRandom(seed + STICKY_NOTE_TILT_SALT),
+    STICKY_NOTE_MAX_TILT,
+  );
+  return (tilt < 0 ? tilt + 2 * Math.PI : tilt) as Radians;
+};
+
+/** the paper color as painted: the stored color, tone-shifted per note */
+export const getStickyNoteFillColor = (
+  element: ExcalidrawStickyNoteElement,
+) => {
+  const variation = getStickyNoteVariation(element.seed);
+  return shiftColorTone(element.backgroundColor, {
+    hue: variation.hueShift,
+    lightness: variation.lightnessShift,
+  });
+};
+
+/** px each bottom corner lifts off the board; 0 is flat */
+const getStickyNoteCurlLifts = (
+  element: ExcalidrawStickyNoteElement,
+  variation: StickyNoteVariation,
+) => {
+  const size = Math.max(0, Math.min(element.width, element.height));
+  const lift =
+    Math.min(size * 0.02, 5) *
+    STICKY_NOTE_CURL_BY_ROUGHNESS[getRoughnessLevel(element)] *
+    variation.curlDepth;
+
+  return {
+    right: variation.curl === "left" ? 0 : lift,
+    left:
+      variation.curl === "right"
+        ? 0
+        : variation.curl === "both"
+        ? lift * STICKY_NOTE_SECOND_CURL_RATIO
+        : lift,
+  };
+};
+
+/** how far along the edges from a lifted corner the bend starts */
+const getStickyNoteCurlReach = (element: ExcalidrawStickyNoteElement) =>
+  Math.min(Math.max(0, Math.min(element.width, element.height)) * 0.18, 40);
+
+/** under a lifted corner the shadow falls this much of the lift further out */
+const STICKY_NOTE_SHADOW_CURL_SPREAD = { x: 0.3, y: 0.8 } as const;
+
+const getStickyNoteShadowBlur = (element: ExcalidrawStickyNoteElement) =>
+  clamp(Math.min(element.width, element.height) * 0.035, 2, 9);
+
 export const getStickyNoteCornerRadius = (
   element: ExcalidrawStickyNoteElement,
 ) => {
@@ -224,78 +379,50 @@ export const getStickyNoteCornerRadius = (
   );
 };
 
+/** the paper's four corners (TL, TR, BR, BL), jittered by sloppiness */
 export const getStickyNoteRenderPoints = (
   element: ExcalidrawStickyNoteElement,
-  {
-    offsetX = 0,
-    offsetY = 0,
-    seedOffset = 0,
-  }: {
-    offsetX?: number;
-    offsetY?: number;
-    seedOffset?: number;
-  } = {},
 ): StickyNoteRenderPoint[] => {
-  const roughness = Math.max(0, Math.min(2, Math.round(element.roughness)));
-  const amount = Math.min(
-    STICKY_NOTE_RENDER_ROUGHNESS[roughness],
-    Math.min(element.width, element.height) * 0.012,
-  );
+  const amount = getJitterAmount(element);
 
   if (!amount) {
     return [
-      { x: offsetX, y: offsetY },
-      { x: offsetX + element.width, y: offsetY },
-      { x: offsetX + element.width, y: offsetY + element.height },
-      { x: offsetX, y: offsetY + element.height },
+      { x: 0, y: 0 },
+      { x: element.width, y: 0 },
+      { x: element.width, y: element.height },
+      { x: 0, y: element.height },
     ];
   }
 
-  const random = seededRandom(element.seed + seedOffset);
+  const random = seededRandom(element.seed);
 
   return [
+    { x: jitter(random, amount), y: jitter(random, amount) },
+    { x: element.width + jitter(random, amount), y: jitter(random, amount) },
     {
-      x: offsetX + jitter(random, amount),
-      y: offsetY + jitter(random, amount),
+      x: element.width + jitter(random, amount),
+      y: element.height + jitter(random, amount),
     },
-    {
-      x: offsetX + element.width + jitter(random, amount),
-      y: offsetY + jitter(random, amount),
-    },
-    {
-      x: offsetX + element.width + jitter(random, amount),
-      y: offsetY + element.height + jitter(random, amount),
-    },
-    {
-      x: offsetX + jitter(random, amount),
-      y: offsetY + element.height + jitter(random, amount),
-    },
+    { x: jitter(random, amount), y: element.height + jitter(random, amount) },
   ];
 };
 
-export const getStickyNotePathCommands = (
-  element: ExcalidrawStickyNoteElement,
-  { shadow = false }: { shadow?: boolean } = {},
+/**
+ * A closed outline through four corners (TL, TR, BR, BL) with rounded
+ * corners. `lifts[i]` curls bottom corner i (2 or 3) up and in by that many
+ * px, bending from `reach` px along both edges; `bows[i]` bows edge i (from
+ * corner i to corner i + 1) sideways by that many px at its middle.
+ */
+const buildStickyNotePath = (
+  points: StickyNoteRenderPoint[],
+  radius: number,
+  {
+    lifts = [0, 0, 0, 0],
+    bows = [0, 0, 0, 0],
+    reach,
+  }: { lifts?: number[]; bows?: number[]; reach: number },
 ): StickyNotePathCommand[] => {
-  const points = getStickyNoteRenderPoints(
-    element,
-    shadow
-      ? {
-          offsetX: STICKY_NOTE_SHADOW_OFFSET,
-          offsetY: STICKY_NOTE_SHADOW_OFFSET,
-          seedOffset: 1,
-        }
-      : undefined,
-  );
-  const radius = getStickyNoteCornerRadius(element);
-  // The note's seed keeps the same corner for the paper and shadow through
-  // redraws and resizes.
-  const liftedCorner =
-    element.roughness === 2
-      ? Math.floor(seededRandom(element.seed)() * points.length)
-      : -1;
-
-  if (!radius && liftedCorner === -1) {
+  if (!radius && lifts.every((lift) => !lift) && bows.every((bow) => !bow)) {
     return [
       { type: "move", point: points[0] },
       ...points.slice(1).map(
@@ -315,17 +442,14 @@ export const getStickyNotePathCommands = (
       Math.hypot(point.x - prev.x, point.y - prev.y) / 2,
       Math.hypot(point.x - next.x, point.y - next.y) / 2,
     );
+    // only the bottom corners (BR = 2, BL = 3) curl
+    const lift = index >= 2 ? lifts[index] : 0;
 
-    if (index === liftedCorner) {
-      const size = Math.min(element.width, element.height);
-      const reach = Math.min(size * 0.18, 40);
-      // The shadow follows the paper inward at half the bend, keeping its
-      // usual down-right offset from the light at the top left.
-      const lift = Math.min(size * 0.02, 5) * (shadow ? 0.5 : 1);
-      // The bend joins the straight edges before the corner, keeping it local.
+    if (lift > 0) {
+      // the corner curls up off the board and a little inward
       const tip = {
-        x: point.x + (index === 1 || index === 2 ? -lift : lift),
-        y: point.y + (index >= 2 ? -lift : lift),
+        x: point.x + (index === 2 ? -lift / 2 : lift / 2),
+        y: point.y - lift,
       };
       const start = pointAtDistance(point, prev, reach);
       const end = pointAtDistance(point, next, reach);
@@ -359,15 +483,126 @@ export const getStickyNotePathCommands = (
     ];
   });
 
+  const firstCorner = corners[0];
   const commands: StickyNotePathCommand[] = [
-    { type: "move", point: corners[0][corners[0].length - 1].point },
+    { type: "move", point: firstCorner[firstCorner.length - 1].point },
   ];
 
   for (let index = 1; index <= corners.length; index++) {
-    commands.push(...corners[index % corners.length]);
+    const [entry, ...rest] = corners[index % corners.length];
+    const bow = bows[index - 1];
+    const from = commands[commands.length - 1].point;
+    const dx = entry.point.x - from.x;
+    const dy = entry.point.y - from.y;
+    const length = Math.hypot(dx, dy);
+
+    if (bow && length) {
+      commands.push({
+        type: "quadratic",
+        control: {
+          x: (from.x + entry.point.x) / 2 - (dy / length) * bow,
+          y: (from.y + entry.point.y) / 2 + (dx / length) * bow,
+        },
+        point: entry.point,
+      });
+    } else {
+      commands.push(entry);
+    }
+    commands.push(...rest);
   }
 
   return commands;
+};
+
+/** the paper's outline in element-local coordinates */
+export const getStickyNotePathCommands = (
+  element: ExcalidrawStickyNoteElement,
+): StickyNotePathCommand[] => {
+  const variation = getStickyNoteVariation(element.seed);
+  const curl = getStickyNoteCurlLifts(element, variation);
+  const bowAmount = getJitterAmount(element) * 0.5 * variation.edgeWaviness;
+  const random = seededRandom(element.seed + STICKY_NOTE_WAVINESS_SALT);
+
+  return buildStickyNotePath(
+    getStickyNoteRenderPoints(element),
+    getStickyNoteCornerRadius(element),
+    {
+      lifts: [0, 0, curl.right, curl.left],
+      bows: [0, 1, 2, 3].map(() => jitter(random, bowAmount)),
+      reach: getStickyNoteCurlReach(element),
+    },
+  );
+};
+
+export type StickyNoteShadow = {
+  /** outline of the shadow-casting shape, element-local, before blurring */
+  commands: StickyNotePathCommand[];
+  /**
+   * canvas `shadowBlur` (≈ 2σ) in element px; SVG takes half of it as the
+   * Gaussian `stdDeviation`
+   */
+  blur: number;
+  opacity: number;
+};
+
+/**
+ * The soft drop shadow: the paper's outline dropped further at the bottom
+ * than the top, and further still under a curled corner.
+ */
+export const getStickyNoteShadow = (
+  element: ExcalidrawStickyNoteElement,
+): StickyNoteShadow => {
+  const variation = getStickyNoteVariation(element.seed);
+  const curl = getStickyNoteCurlLifts(element, variation);
+  const bottom = variation.shadowOffsetY;
+  const top = bottom * STICKY_NOTE_SHADOW_TOP_RATIO;
+  const sideways = variation.shadowOffsetX;
+  const spread = STICKY_NOTE_SHADOW_CURL_SPREAD;
+  const [topLeft, topRight, bottomRight, bottomLeft] =
+    getStickyNoteRenderPoints(element);
+
+  return {
+    commands: buildStickyNotePath(
+      [
+        { x: topLeft.x + sideways, y: topLeft.y + top },
+        { x: topRight.x + sideways, y: topRight.y + top },
+        {
+          x: bottomRight.x + sideways + curl.right * spread.x,
+          y: bottomRight.y + bottom + curl.right * spread.y,
+        },
+        {
+          x: bottomLeft.x + sideways - curl.left * spread.x,
+          y: bottomLeft.y + bottom + curl.left * spread.y,
+        },
+      ],
+      getStickyNoteCornerRadius(element),
+      { reach: getStickyNoteCurlReach(element) },
+    ),
+    blur: getStickyNoteShadowBlur(element),
+    opacity: STICKY_NOTE_SHADOW_OPACITY,
+  };
+};
+
+/**
+ * Upper bound, in element px, of how far the painted note (blurred shadow and
+ * jittered paper) reaches outside its width × height box. Analytic — no path
+ * is built — since the cached element canvas asks for it on every frame.
+ */
+export const getStickyNoteShadowExtent = (
+  element: ExcalidrawStickyNoteElement,
+) => {
+  const variation = getStickyNoteVariation(element.seed);
+  const curl = getStickyNoteCurlLifts(element, variation);
+  const maxLift = Math.max(curl.left, curl.right);
+  const spread = STICKY_NOTE_SHADOW_CURL_SPREAD;
+  const sideways = Math.abs(variation.shadowOffsetX) + maxLift * spread.x;
+  const down = variation.shadowOffsetY + maxLift * spread.y;
+
+  return (
+    Math.abs(getJitterAmount(element)) +
+    Math.max(sideways, down) +
+    getStickyNoteShadowBlur(element) * 1.5
+  );
 };
 
 // -----------------------------------------------------------------------------

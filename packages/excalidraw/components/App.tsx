@@ -158,6 +158,7 @@ import {
   getContainerElement,
   getColorUpdate,
   getStickyNoteMinSize,
+  getStickyNoteCreationAngle,
   isValidTextContainer,
   redrawTextBoundingBox,
   hasBoundingBox,
@@ -10629,7 +10630,12 @@ class App extends React.Component<AppProps, AppState> {
 
         this.scene.mutateElement(
           newElement,
-          { ...nextGeometry, baseHeight: nextGeometry.height },
+          {
+            ...nextGeometry,
+            baseHeight: nextGeometry.height,
+            // a placed note sits slightly askew, like paper stuck on a board
+            angle: getStickyNoteCreationAngle(newElement.seed),
+          },
           { informMutation: false, isDragging: false },
         );
 

@@ -386,6 +386,39 @@ export const colorToHex = (color: string): string | null => {
   return rgbToHex(r, g, b, a);
 };
 
+/**
+ * Rotates the color's hue by `hue` degrees and adds `lightness` (a fraction
+ * of 1, clamped to [0, 1]) to its HSL lightness, keeping its alpha. Render-only
+ * helper: returns #RRGGBB, or #RRGGBBAA for a non-opaque color.
+ *
+ * An unparseable color is returned unchanged rather than thrown on: it is
+ * stored user data the canvas ignores anyway, and throwing would drop the
+ * whole element from the render.
+ */
+export const shiftColorTone = (
+  color: string,
+  shift: { hue: number; lightness: number },
+): string => {
+  if (!Number.isFinite(shift.hue) || !Number.isFinite(shift.lightness)) {
+    throw new Error(
+      `shiftColorTone: shift must be finite (hue ${shift.hue}, lightness ${shift.lightness})`,
+    );
+  }
+  const tc = tinycolor(color);
+  if (!tc.isValid()) {
+    return color;
+  }
+  const hsl = tc.toHsl();
+  const shifted = tinycolor({
+    h: (((hsl.h + shift.hue) % 360) + 360) % 360,
+    s: hsl.s,
+    l: clamp(hsl.l + shift.lightness, 0, 1),
+    a: hsl.a,
+  });
+  const { r, g, b, a } = shifted.toRgb();
+  return rgbToHex(r, g, b, a);
+};
+
 export const isTransparent = (color: string) => {
   return tinycolor(color).getAlpha() === 0;
 };

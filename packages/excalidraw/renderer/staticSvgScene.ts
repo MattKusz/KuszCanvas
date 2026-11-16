@@ -13,8 +13,8 @@ import {
   MIME_TYPES,
   STICKY_NOTE_EDGE_SHADOW_OPACITY,
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
+  STICKY_NOTE_BOTTOM_SHADE,
   STICKY_NOTE_FOOTER,
-  STICKY_NOTE_SHADOW_OPACITY,
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import { hashString } from "@excalidraw/element";
@@ -39,8 +39,11 @@ import { getCornerRadius, isPathALoop } from "@excalidraw/element";
 
 import { ShapeCache } from "@excalidraw/element";
 import {
+  getStickyNoteFillColor,
   getStickyNoteFooter,
   getStickyNotePathCommands,
+  getStickyNoteShadow,
+  getStickyNoteShadowExtent,
   type StickyNotePathCommand,
 } from "@excalidraw/element";
 
@@ -202,19 +205,64 @@ const renderElementToSvg = (
         group.setAttribute("opacity", `${opacity}`);
       }
 
+      const doc = svgRoot.ownerDocument;
+      const defs = doc.createElementNS(SVG_NS, "defs");
+
+      // soft drop shadow: the same shape and blur as the canvas
+      // `shadowBlur`, whose σ is half its value
+      const shadowStyle = getStickyNoteShadow(element);
+      const extent = getStickyNoteShadowExtent(element);
+      const shadowFilter = doc.createElementNS(SVG_NS, "filter");
+      shadowFilter.setAttribute("id", `sticky-note-shadow-${element.id}`);
+      shadowFilter.setAttribute("filterUnits", "userSpaceOnUse");
+      shadowFilter.setAttribute("x", `${-extent}`);
+      shadowFilter.setAttribute("y", `${-extent}`);
+      shadowFilter.setAttribute("width", `${element.width + extent * 2}`);
+      shadowFilter.setAttribute("height", `${element.height + extent * 2}`);
+      const blur = doc.createElementNS(SVG_NS, "feGaussianBlur");
+      blur.setAttribute("stdDeviation", `${shadowStyle.blur / 2}`);
+      shadowFilter.appendChild(blur);
+      defs.appendChild(shadowFilter);
+
       const shadow = createPath(
-        getStickyNotePathCommands(element, { shadow: true }),
+        shadowStyle.commands,
         "#000",
-        STICKY_NOTE_SHADOW_OPACITY,
+        shadowStyle.opacity,
       );
+      shadow.setAttribute("filter", `url(#${shadowFilter.id})`);
+
       const commands = getStickyNotePathCommands(element);
       const rect = createPath(
         commands,
         applyDarkModeFilter(
-          element.backgroundColor,
+          getStickyNoteFillColor(element),
           renderConfig.theme === THEME.DARK,
         ),
       );
+
+      // the bottom of the paper darkens where it starts to lift
+      const shadeGradient = doc.createElementNS(SVG_NS, "linearGradient");
+      shadeGradient.setAttribute("id", `sticky-note-shade-${element.id}`);
+      shadeGradient.setAttribute("gradientUnits", "userSpaceOnUse");
+      shadeGradient.setAttribute("x1", "0");
+      shadeGradient.setAttribute(
+        "y1",
+        `${element.height * (1 - STICKY_NOTE_BOTTOM_SHADE.heightRatio)}`,
+      );
+      shadeGradient.setAttribute("x2", "0");
+      shadeGradient.setAttribute("y2", `${element.height}`);
+      for (const [offset, opacity] of [
+        [0, 0],
+        [1, STICKY_NOTE_BOTTOM_SHADE.opacity],
+      ]) {
+        const stop = doc.createElementNS(SVG_NS, "stop");
+        stop.setAttribute("offset", `${offset}`);
+        stop.setAttribute("stop-color", "#000");
+        stop.setAttribute("stop-opacity", `${opacity}`);
+        shadeGradient.appendChild(stop);
+      }
+      defs.appendChild(shadeGradient);
+      const shade = createPath(commands, `url(#${shadeGradient.id})`);
       const clipPath = svgRoot.ownerDocument.createElementNS(
         SVG_NS,
         "clipPath",
@@ -236,8 +284,10 @@ const renderElementToSvg = (
       );
       edgeShadow.setAttribute("clip-path", `url(#${clipPath.id})`);
 
+      group.appendChild(defs);
       group.appendChild(shadow);
       group.appendChild(rect);
+      group.appendChild(shade);
       group.appendChild(edgeShadow);
 
       const footer = getStickyNoteFooter(element);

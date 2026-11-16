@@ -269,8 +269,17 @@ export const DEFAULT_STICKY_NOTE_SIZE = 250;
 // floor for a finalized note's width and base height; the UI floor is font-aware
 // on top of it (see `getStickyNoteMinSize`)
 export const STICKY_NOTE_MIN_SIZE = 75;
-export const STICKY_NOTE_SHADOW_OFFSET = 3;
-export const STICKY_NOTE_SHADOW_OPACITY = 0.16;
+/** opacity of the soft, blurred drop shadow under a sticky note */
+export const STICKY_NOTE_SHADOW_OPACITY = 0.3;
+/**
+ * The darkening over the bottom of the paper, where it starts to lift off the
+ * board: a gradient from clear at `1 - heightRatio` of the note's height to
+ * `opacity` black at its bottom edge.
+ */
+export const STICKY_NOTE_BOTTOM_SHADE = {
+  heightRatio: 0.12,
+  opacity: 0.07,
+} as const;
 export const STICKY_NOTE_EDGE_SHADOW_WIDTH = 0.5;
 export const STICKY_NOTE_EDGE_SHADOW_OPACITY = 0.08;
 export const DEFAULT_FONT_FAMILY: FontFamilyValues = FONT_FAMILY.Excalifont;
