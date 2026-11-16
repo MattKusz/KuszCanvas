@@ -1,10 +1,8 @@
 import {
   Excalidraw,
-  LiveCollaborationTrigger,
   TTDDialogTrigger,
   CaptureUpdateAction,
   reconcileElements,
-  useEditorInterface,
   ExcalidrawAPIProvider,
   useExcalidrawAPI,
 } from "@excalidraw/excalidraw";
@@ -131,7 +129,6 @@ import {
 } from "./data/LocalData";
 import { isBrowserStorageStateNewer } from "./data/tabSync";
 import { ShareDialog, shareDialogStateAtom } from "./share/ShareDialog";
-import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import { useHandleAppTheme } from "./useHandleAppTheme";
 import { getPreferredLanguage } from "./app-language/language-detector";
 import { useAppLangCode } from "./app-language/language-state";
@@ -146,7 +143,6 @@ import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
 import "./index.scss";
 
-import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
 
 import type { CollabAPI } from "./collab/Collab";
@@ -382,8 +378,6 @@ const ExcalidrawWrapper = () => {
 
   const [langCode, setLangCode] = useAppLangCode();
 
-  const editorInterface = useEditorInterface();
-
   // initial state
   // ---------------------------------------------------------------------------
 
@@ -410,7 +404,6 @@ const ExcalidrawWrapper = () => {
   const [isCollaborating] = useAtomWithInitialValue(isCollaboratingAtom, () => {
     return isCollaborationLink(window.location.href);
   });
-  const collabError = useAtomValue(collabErrorIndicatorAtom);
   const userToFollow = useAtomValue(userToFollowAtom);
 
   const viewportStatusFrame = useMemo(
@@ -949,7 +942,9 @@ const ExcalidrawWrapper = () => {
   return (
     <div
       style={{ height: "100%" }}
-      className={clsx("excalidraw-app", {
+      // excalidraw-wrapper: the Obsidian host's wrapper class; the tray
+      // layout rules in obsidianStylingOverrides.css are scoped under it
+      className={clsx("excalidraw-app", "excalidraw-wrapper", {
         "is-collaborating": isCollaborating,
       })}
     >
@@ -1000,30 +995,6 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         onThemeChange={setAppTheme}
-        renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || !isCollabAvailable) {
-            return null;
-          }
-
-          return (
-            <div className="excalidraw-ui-top-right">
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
-              )}
-
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
-            </div>
-          );
-        }}
         onLinkOpen={(element, event) => {
           if (element.link && isElementLink(element.link)) {
             event.preventDefault();

@@ -156,3 +156,8 @@
     --plus-banner-subtitle: #8f8cc4;
   }
 }
+
+// KuszCanvas: hide the tool hint below the toolbar in the web test app
+.excalidraw-app .excalidraw .HintViewer {
+  display: none;
+}
