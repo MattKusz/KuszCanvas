@@ -18,7 +18,10 @@ import {
   type EditorInterface,
   type StylesPanelMode,
 } from "@excalidraw/common";
-import { configureObsidianCommonHost } from "@excalidraw/common/commonObsidianHost";
+import {
+  configureObsidianCommonHost,
+  OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
+} from "@excalidraw/common/commonObsidianHost";
 import {
   addElementsToFrame,
   getElementsCompletelyInFrame,
@@ -110,7 +113,7 @@ describe("Obsidian wrap link ownership", () => {
     "enables W in %s layout only when the layout is not mobile",
     async (mode: StylesPanelMode) => {
       const dispose = configureObsidianCommonHost({
-        protocolVersion: 1,
+        protocolVersion: OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
         getDeviceInfo: () => null,
         getDesktopUIMode: () => mode,
         getPreferredUIMode: () => mode,
@@ -119,6 +122,8 @@ describe("Obsidian wrap link ownership", () => {
           widthHeightLimit: 32767,
         }),
         getHighlightColor: () => "#0076ff",
+        isBlackboardModeEnabled: () => false,
+        isMarkdownTextRenderingEnabled: () => false,
       });
       try {
         const { api, select, toggle } = await mount(

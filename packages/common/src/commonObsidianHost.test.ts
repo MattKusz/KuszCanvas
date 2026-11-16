@@ -11,6 +11,8 @@ import {
   getDesktopUIMode,
   getHighlightColor,
   getObsidianDeviceInfo,
+  isBlackboardModeEnabled,
+  isMarkdownTextRenderingEnabled,
   getPreferredUIMode,
   getWidthHeightLimit,
 } from "./commonObsidianUtils";
@@ -43,6 +45,8 @@ const createFakeHost = (
   getCanvasLimits: () => ({ areaLimit, widthHeightLimit }),
   getHighlightColor: (_sceneBackgroundColor, opacity) =>
     `rgba(0,118,255,${opacity})`,
+  isBlackboardModeEnabled: () => false,
+  isMarkdownTextRenderingEnabled: () => false,
 });
 
 describe("Obsidian common host registry", () => {
@@ -73,6 +77,40 @@ describe("Obsidian common host registry", () => {
     expect(getAreaLimit()).toBe(16_777_216);
     expect(getWidthHeightLimit()).toBe(32_767);
     expect(getHighlightColor("#ffffff", 0.5)).toBe("rgba(0,118,255,0.5)");
+    expect(isBlackboardModeEnabled()).toBe(false);
+    expect(isMarkdownTextRenderingEnabled()).toBe(false);
+  });
+
+  it("uses protocol 2 for the KuszCanvas render flags", () => {
+    expect(OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION).toBe(2);
+  });
+
+  it("reads the render flags live on every call", () => {
+    const flags = { blackboard: false, markdown: false };
+    configure({
+      ...createFakeHost(123),
+      isBlackboardModeEnabled: () => flags.blackboard,
+      isMarkdownTextRenderingEnabled: () => flags.markdown,
+    });
+
+    expect(isBlackboardModeEnabled()).toBe(false);
+    expect(isMarkdownTextRenderingEnabled()).toBe(false);
+    flags.blackboard = true;
+    expect(isBlackboardModeEnabled()).toBe(true);
+    expect(isMarkdownTextRenderingEnabled()).toBe(false);
+    flags.markdown = true;
+    expect(isMarkdownTextRenderingEnabled()).toBe(true);
+  });
+
+  it("treats only a strict true as enabled", () => {
+    configure({
+      ...createFakeHost(123),
+      isBlackboardModeEnabled: () => "yes",
+      isMarkdownTextRenderingEnabled: () => 1,
+    } as unknown as ObsidianCommonHostAdapter);
+
+    expect(isBlackboardModeEnabled()).toBe(false);
+    expect(isMarkdownTextRenderingEnabled()).toBe(false);
   });
 
   it("exposes capabilities from a configured structural fake", () => {
@@ -174,11 +212,11 @@ describe("Obsidian common host registry", () => {
   it("rejects an unsupported runtime protocol", () => {
     const incompatibleHost = {
       ...createFakeHost(123),
-      protocolVersion: 2,
+      protocolVersion: 1,
     } as unknown as ObsidianCommonHostAdapter;
 
     expect(() => configureObsidianCommonHost(incompatibleHost)).toThrow(
-      "Unsupported Obsidian common host protocol: 2",
+      "Unsupported Obsidian common host protocol: 1",
     );
     expect(getObsidianCommonHost()).toBeNull();
   });

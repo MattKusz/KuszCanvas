@@ -15,7 +15,7 @@ import type { EditorInterface, StylesPanelMode } from "./editorInterface";
  */
 
 /** Runtime protocol understood by this version of the fork. */
-export const OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION = 1 as const;
+export const OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION = 2 as const; // KuszCanvas -- protocol 2 adds blackboard and Markdown-text render flags
 
 /** Device capabilities supplied by the Obsidian host. */
 export type ObsidianDeviceType = Readonly<{
@@ -58,6 +58,18 @@ export interface ObsidianCommonHostAdapter {
   getCanvasLimits(): ObsidianCanvasLimits;
 
   getHighlightColor(sceneBackgroundColor: string, opacity: number): string;
+
+  /**
+   * KuszCanvas: whether dark theme renders as a chalk "blackboard".
+   * Read live on every render; must return a boolean.
+   */
+  isBlackboardModeEnabled(): boolean;
+
+  /**
+   * KuszCanvas: whether text elements render inline Markdown styling.
+   * Read live on every render; must return a boolean.
+   */
+  isMarkdownTextRenderingEnabled(): boolean;
 }
 
 /** Idempotent cleanup returned when a host adapter is configured. */

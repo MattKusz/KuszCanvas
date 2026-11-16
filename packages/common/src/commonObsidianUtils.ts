@@ -34,6 +34,20 @@ export function getWidthHeightLimit() {
   return getObsidianCommonHost()?.getCanvasLimits().widthHeightLimit ?? 32767;
 }
 
+/**
+ * KuszCanvas: blackboard (chalk) rendering for dark theme. Outside Obsidian,
+ * or when the host returns anything other than `true`, it is off.
+ */
+export const isBlackboardModeEnabled = (): boolean =>
+  getObsidianCommonHost()?.isBlackboardModeEnabled() === true;
+
+/**
+ * KuszCanvas: inline Markdown rendering in text elements. Outside Obsidian,
+ * or when the host returns anything other than `true`, it is off.
+ */
+export const isMarkdownTextRenderingEnabled = (): boolean =>
+  getObsidianCommonHost()?.isMarkdownTextRenderingEnabled() === true;
+
 export function getHighlightColor(
   sceneBgColor: string,
   opacity: number = 1,

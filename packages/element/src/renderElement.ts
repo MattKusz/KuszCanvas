@@ -27,6 +27,8 @@ import {
   isIOS, // zsviczian -- preserve the host iOS inversion workaround
   getAreaLimit, // zsviczian -- host canvas limits
   getWidthHeightLimit, // zsviczian -- host canvas limits
+  isBlackboardModeEnabled, // KuszCanvas -- host render flags
+  isMarkdownTextRenderingEnabled, // KuszCanvas -- host render flags
   STICKY_NOTE_EDGE_SHADOW_OPACITY,
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
   STICKY_NOTE_FOOTER,
@@ -222,6 +224,9 @@ export interface ExcalidrawElementWithCanvas {
   canvasOffsetY: number;
   imageCrop: ExcalidrawImageElement["crop"] | null;
   containingFrameOpacity: number;
+  /** KuszCanvas: host render flags the bitmap was drawn with */
+  blackboardMode: boolean;
+  markdownText: boolean;
 }
 
 const cappedElementCanvasSize = (
@@ -345,6 +350,8 @@ const generateElementCanvas = (
     containingFrameOpacity:
       getContainingFrame(element, elementsMap)?.opacity || 100,
     imageCrop: isImageElement(element) ? element.crop : null,
+    blackboardMode: isBlackboardModeEnabled(),
+    markdownText: isMarkdownTextRenderingEnabled(),
   };
 };
 
@@ -793,7 +800,9 @@ const generateElementWithCanvas = (
     prevElementWithCanvas.deviceScale !== renderConfig.scale ||
     prevElementWithCanvas.environment !== renderEnvironment ||
     prevElementWithCanvas.imageCrop !== imageCrop ||
-    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity
+    prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity ||
+    prevElementWithCanvas.blackboardMode !== isBlackboardModeEnabled() ||
+    prevElementWithCanvas.markdownText !== isMarkdownTextRenderingEnabled()
   ) {
     const elementWithCanvas = generateElementCanvas(
       element,
