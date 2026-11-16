@@ -27,6 +27,7 @@ dev-dist
 html
 meta*.json
 .claude
+.tmp
 
 repository.zip
 .test-work/
