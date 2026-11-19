@@ -8,11 +8,17 @@ import "../excalidraw-app/sentry";
 import "../packages/excalidraw/css/obsidianStylingOverrides.css";
 
 import ExcalidrawApp from "./App";
+import { installHarnessHosts } from "./harnessHost";
 
 // the entry's JavaScript and CSS loaded and ran (`scripts/stats/perf.mjs`)
 performance.mark("excalidraw:app-start");
 
 window.__EXCALIDRAW_SHA__ = import.meta.env.VITE_APP_GIT_SHA;
+// TEST HARNESS ONLY: a stub Obsidian host so text/hyperlink editing and
+// Mermaid work in the browser; `?blackboard=1&markdown=1` turns on the
+// render flags. Installed once, before the editor mounts. See harnessHost.ts.
+installHarnessHosts(window.location.search);
+
 const rootElement = document.getElementById("root")!;
 const root = createRoot(rootElement);
 registerSW();
