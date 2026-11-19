@@ -32,6 +32,7 @@ KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that 
 - `corepack yarn vitest run <file>` — targeted tests. `corepack yarn test` starts watch mode and never exits.
 - `corepack yarn build:obsidian` in `packages/excalidraw` — consumer build. Verify reproducibility on the production `.js`/`.css` only; the development bundle is not byte-reproducible.
 - `corepack yarn fix` — format and lint fixes.
+- ESLint's default formatter fails to load (`Cannot use import statement outside a module`), which hides lint results; lint specific files with `node_modules/.bin/eslint -f json <files>`.
 - Tell Matt to run `corepack yarn start` for the web harness (details in `excalidraw-app/CLAUDE.md`).
 
 ## Avoid
@@ -39,6 +40,6 @@ KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that 
 - Never run `test:update` across the suite: about 1,500 tests fail at baseline (snapshot mismatches and `App` not mounting) and it would rewrite those snapshots. Update only snapshots you have inspected.
 - Don't rely on App-mounting tests (`h.elements` is undefined at baseline); test pure functions, or drive the harness with Playwright.
 - Regression check: compare sorted `FAIL` lines, not counts. Get the baseline from a clean worktree of HEAD outside the repo (`git worktree add --detach ../KuszCanvas-baseline HEAD`, then `corepack yarn install --frozen-lockfile --prefer-offline`), not `git stash`, which destroys work when other agents share the tree. Strip ANSI, `grep '^ FAIL '`, strip trailing `NNNms`, and sort both lists with `LC_ALL=C sort -u` before `comm`.
-- Flaky: `interactivity.test.tsx > programmatic viewport API still works` and the two `hostAbstraction.test.tsx > headless (server-side) export` tests.
+- Flaky: `interactivity.test.tsx > programmatic viewport API still works` and the two `hostAbstraction.test.tsx > headless (server-side) export` tests, and `scrollConstraints.test.tsx > clears both active and pending locks with setViewport(null)`.
 - When several agents share the working tree: no `git stash`/`reset`/`checkout --`/`clean`, one full-suite run at a time, and claim shared `App.tsx` regions in a coordination log under `.tmp/` before editing.
 - Scratch files go in `.tmp/` (ignored).
