@@ -1,6 +1,10 @@
 import { getNonDeletedElements } from "@excalidraw/element";
 import { mutateElement } from "@excalidraw/element";
-import { newFrameElement } from "@excalidraw/element";
+import {
+  getCurrentItemFrameShapeStyle,
+  getFrameCreationStyle,
+  newFrameElement,
+} from "@excalidraw/element";
 import {
   isBoundToContainer,
   isFrameLikeElement,
@@ -231,6 +235,13 @@ export const wrapInFrame = (
     y: y1 - padding,
     width: x2 - x1 + padding * 2,
     height: y2 - y1 + padding * 2,
+    // KuszCanvas: new frames take the current-item styles like rectangles
+    ...getFrameCreationStyle({
+      type: "frame",
+      frameRole: null,
+      currentItemStyle: getCurrentItemFrameShapeStyle(appState),
+      hostFrameColor: appState.frameColor,
+    }),
   });
 
   // for a selected partial group, we want to remove it from the remainder of the group

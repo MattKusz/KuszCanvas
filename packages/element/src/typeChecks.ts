@@ -323,7 +323,9 @@ export const isUsingAdaptiveRadius = (type: string) =>
   type === "rectangle" ||
   type === "embeddable" ||
   type === "iframe" ||
-  type === "image";
+  type === "image" ||
+  // KuszCanvas: regular frames are styled like rectangles
+  type === "frame";
 
 export const isUsingProportionalRadius = (type: string) =>
   type === "line" ||

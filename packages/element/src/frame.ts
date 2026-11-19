@@ -40,9 +40,17 @@ import {
   isTextElement,
 } from "./typeChecks";
 
+import {
+  frameBoxesEqual,
+  getElementsFitBounds,
+  getFrameBox,
+  growFrameBoxToFit,
+} from "./frameLiveExpand";
+
 import { getNonDeletedElements } from ".";
 
-import type { ExcalidrawElementsIncludingDeleted } from "./Scene";
+import type { ExcalidrawElementsIncludingDeleted, Scene } from "./Scene";
+import type { FrameBox } from "./frameLiveExpand";
 
 import type {
   ElementsMap,
@@ -1151,4 +1159,111 @@ export const frameAndChildrenSelectedTogether = (
       (element) => element.frameId && selectedElementsMap.has(element.frameId),
     )
   );
+};
+
+// --------------------------- Frame auto-expand ------------------------------
+
+/** Margin, in scene px, kept between a frame's grown edge and its children. */
+export const FRAME_AUTO_EXPAND_PADDING = 16;
+
+export type FrameExpansion = FrameBox;
+
+/**
+ * Whether auto-expand may change the frame. Locked frames keep their size by
+ * intent, marker frames are annotations rather than containers, and rotated
+ * frames (never created by the editor) have no axis-aligned edges to grow.
+ */
+export const isFrameAutoExpandable = (frame: ExcalidrawFrameLikeElement) =>
+  !frame.isDeleted &&
+  !frame.locked &&
+  frame.frameRole !== "marker" && //zsviczian
+  frame.angle === 0;
+
+/**
+ * Pure: the geometry that makes the frame fit its children, or `null` when no
+ * child (or a child's bound text) reaches past the frame.
+ *
+ * Expand only. A side grows only where some child's rotated bounds pass it,
+ * and then to that child's edge plus `padding`; other sides stay where they
+ * are, so the frame never shrinks and its children never move.
+ * Locked, marker, rotated and deleted frames are never expanded.
+ */
+export const expandFrameToFitElements = (
+  frame: ExcalidrawFrameLikeElement,
+  elementsMap: ElementsMap,
+  padding: number,
+): FrameExpansion | null => {
+  if (!frame || !isFrameLikeElement(frame)) {
+    throw new Error("expandFrameToFitElements: expected a frame element");
+  }
+  if (!elementsMap || typeof elementsMap.get !== "function") {
+    throw new Error("expandFrameToFitElements: expected an elements map");
+  }
+  if (!Number.isFinite(padding) || padding < 0) {
+    throw new Error(
+      `expandFrameToFitElements: padding must be a finite number >= 0, got ${padding}`,
+    );
+  }
+  if (![frame.x, frame.y, frame.width, frame.height].every(Number.isFinite)) {
+    throw new Error(
+      `expandFrameToFitElements: frame ${frame.id} has non-finite geometry`,
+    );
+  }
+
+  if (!isFrameAutoExpandable(frame)) {
+    return null;
+  }
+
+  const box = getFrameBox(frame);
+  const children = [...elementsMap.values()].filter(
+    (element) => element.frameId === frame.id,
+  );
+  // children plus their bound text: a label may not carry the frameId
+  const grown = growFrameBoxToFit(
+    box,
+    getElementsFitBounds(children, elementsMap),
+    padding,
+  );
+
+  return frameBoxesEqual(grown, box) ? null : grown;
+};
+
+/**
+ * Grows each given frame to fit its children (see `expandFrameToFitElements`).
+ * Mutates through the scene so the change lands in the caller's scene update
+ * and, with it, the same undo step.
+ */
+export const expandFramesToFitElements = (
+  frameIds: Iterable<ExcalidrawFrameLikeElement["id"] | null | undefined>,
+  scene: Scene,
+): void => {
+  if (!scene) {
+    throw new Error("expandFramesToFitElements: expected a scene");
+  }
+  if (!frameIds || typeof (frameIds as any)[Symbol.iterator] !== "function") {
+    throw new Error("expandFramesToFitElements: expected iterable frame ids");
+  }
+  const elementsMap = scene.getNonDeletedElementsMap();
+  const seen = new Set<string>();
+  for (const frameId of frameIds) {
+    if (!frameId || seen.has(frameId)) {
+      continue;
+    }
+    seen.add(frameId);
+    const frame = elementsMap.get(frameId);
+    if (!frame || !isFrameLikeElement(frame)) {
+      continue;
+    }
+    const expansion = expandFrameToFitElements(
+      frame,
+      elementsMap,
+      FRAME_AUTO_EXPAND_PADDING,
+    );
+    if (expansion) {
+      scene.mutateElement(frame, expansion, {
+        informMutation: true,
+        isDragging: false,
+      });
+    }
+  }
 };

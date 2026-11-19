@@ -15,6 +15,7 @@ import {
   hasStrokeColor,
   isStickyNoteBoundText,
   isStickyNoteElement,
+  isStylableFrame,
   isTextElement,
   normalizeStickyNoteBackgroundColor,
   normalizeStickyNoteStrokeColor,
@@ -111,9 +112,11 @@ export const resolveColorTarget = (
 ): ColorTarget => {
   const elementsMap = arrayToMap(elements);
   const supports = (element: ExcalidrawElement) =>
-    property === "strokeColor"
+    // KuszCanvas: regular frames take rectangle colours
+    isStylableFrame(element) ||
+    (property === "strokeColor"
       ? hasStrokeColor(element.type)
-      : hasBackground(element.type);
+      : hasBackground(element.type));
 
   const targets: ExcalidrawElement[] = getSelectedElements(elements, appState, {
     includeBoundTextElement: property === "strokeColor",

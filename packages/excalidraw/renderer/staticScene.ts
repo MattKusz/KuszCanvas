@@ -21,6 +21,7 @@ import {
 } from "@excalidraw/element";
 
 import {
+  getFrameFillAnchors,
   getRenderElementWithPositionOverride,
   resolveElementRenderState,
   renderElement,
@@ -490,11 +491,37 @@ const _renderStaticScene = ({
     }
   };
 
+  // KuszCanvas: a filled shape frame paints its fill below its lowest child
+  // (children sit just below their frame) and its outline at its own z-index
+  const frameFillAnchors = getFrameFillAnchors(
+    visibleElements.filter((el) => !isIframeLikeElement(el)),
+  );
+  const separatelyFilledFrameIds = new Set<string>();
+  frameFillAnchors.forEach((frames) =>
+    frames.forEach((frame) => separatelyFilledFrameIds.add(frame.id)),
+  );
+
   // Paint visible elements
   visibleElements
     .filter((el) => !isIframeLikeElement(el))
     .forEach((element) => {
       try {
+        frameFillAnchors.get(element.id)?.forEach((frame) => {
+          withSavedContext(context, () => {
+            renderElement(
+              frame,
+              elementsMap,
+              allElementsMap,
+              rc,
+              context,
+              renderConfig,
+              appState,
+              getRenderState(frame),
+              "fill",
+            );
+          });
+        });
+
         if (
           isTextElement(element) &&
           element.containerId &&
@@ -518,6 +545,7 @@ const _renderStaticScene = ({
             renderConfig,
             appState,
             renderState,
+            separatelyFilledFrameIds.has(element.id) ? "stroke" : "full",
           );
 
           if (boundTextElement) {

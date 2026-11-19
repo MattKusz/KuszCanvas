@@ -1,4 +1,5 @@
 import {
+  arrayToMap,
   CURSOR_TYPE,
   DRAGGING_THRESHOLD,
   getGridPoint,
@@ -7,6 +8,7 @@ import {
   shouldMaintainAspectRatio,
   shouldResizeFromCenter,
   shouldRotateWithDiscreteAngle,
+  toBrandedType,
   tupleToCoors,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/common";
@@ -14,6 +16,11 @@ import {
   addElementsToFrame,
   cropElement,
   dragSelectedElements,
+  expandFramesToFitElements,
+  getBoundTextElement,
+  placeElementsAboveFrame,
+  removeElementsFromFrame,
+  syncMovedIndices,
   getCommonBounds,
   getCommonFrameId,
   getElementAbsoluteCoords,
@@ -66,6 +73,7 @@ import type {
   NonDeleted,
   NonDeletedExcalidrawElement,
   NonDeletedSceneElementsMap,
+  SceneElementsMap,
   PointerType,
 } from "@excalidraw/element/types";
 
@@ -81,7 +89,7 @@ import { snapDraggedElements, snapResizingElements } from "../snapping";
 import { selectGroupsForSelectedElements } from "./App.selection";
 
 import type React from "react";
-import type { PointerDownState } from "../types";
+import type { AppState, PointerDownState } from "../types";
 import type App from "./App";
 
 /**
@@ -1016,6 +1024,20 @@ export class AppSelectionTool {
           selectionElement: null,
         });
 
+        // KuszCanvas CP5: the frame under the drag grows live to fit it; the
+        // highlight shows the frame the drop would join
+        // (setState, not updateFrameToHighlight: that compares against the
+        // batched state and would drop this second update of the move)
+        if (!selectedElementsHasAFrame) {
+          this.app.setState({
+            frameToHighlight: this.app.frameLiveExpand.dragMove(
+              pointerCoords,
+              frameToHighlight,
+              selectedElements,
+            ),
+          });
+        }
+
         // We duplicate the selected element if alt is pressed on pointer move
         if (event.altKey && !pointerDownState.hit.hasBeenDuplicated) {
           this.app.duplicate.duplicateDraggedSelection(pointerDownState, event);
@@ -1150,10 +1172,36 @@ export class AppSelectionTool {
     const sceneCoords = viewportCoordsToSceneCoords(childEvent, this.app.state);
     // update the relationships between selected elements and frames
     const selectedElements = this.app.scene.getSelectedElements(this.app.state);
-    const topLayerFrame = this.app.getTopLayerFrameAtSceneCoords(sceneCoords, {
+    let topLayerFrame = this.app.getTopLayerFrameAtSceneCoords(sceneCoords, {
       currentFrameId: getCommonFrameId(selectedElements),
       excludeElementIds: this.app.state.selectedElementIds,
     });
+    // KuszCanvas CP5: the drop does what the live preview showed (the frame
+    // was settled to its final size at the start of this release)
+    const liveDecision = this.app.frameLiveExpand.consumeDecision();
+    if (liveDecision) {
+      const liveFrame = this.app.scene
+        .getNonDeletedElementsMap()
+        .get(liveDecision.frameId);
+      if (liveDecision.joins && liveFrame && isFrameLikeElement(liveFrame)) {
+        topLayerFrame = liveFrame;
+      } else if (
+        !liveDecision.joins &&
+        topLayerFrame?.id === liveDecision.frameId
+      ) {
+        topLayerFrame = null;
+      }
+    }
+    // membership follows that decision, not a highlight still being batched
+    const membershipState: AppState = liveDecision
+      ? {
+          ...this.app.state,
+          frameToHighlight:
+            liveDecision.joins && topLayerFrame?.id === liveDecision.frameId
+              ? topLayerFrame
+              : null,
+        }
+      : this.app.state;
     let nextElements = this.app.scene.getElementsMapIncludingDeleted();
 
     const updateGroupIdsAfterEditingGroup = (elements: ExcalidrawElement[]) => {
@@ -1197,8 +1245,14 @@ export class AppSelectionTool {
     };
 
     if (topLayerFrame && !this.app.state.selectedElementIds[topLayerFrame.id]) {
-      const elementsToAdd = selectedElements.filter((element) =>
-        isElementInFrame(element, nextElements, this.app.state),
+      const frameId = topLayerFrame.id;
+      const elementsToAdd = selectedElements.filter(
+        (element) =>
+          isElementInFrame(element, nextElements, membershipState) &&
+          // KuszCanvas CP5: dropped before the dwell, only children stay in
+          (liveDecision?.frameId !== frameId ||
+            liveDecision.admitsNewMembers ||
+            element.frameId === frameId),
       );
 
       if (this.app.state.editingGroupId) {
@@ -1224,13 +1278,55 @@ export class AppSelectionTool {
 
     nextElements = updateFrameMembershipOfSelectedElements(
       nextElements,
-      this.app.state,
+      membershipState,
       this.app,
     );
     // the dragged arrows, and those bound to the dragged elements
     removeArrowsWithoutEndInFrame(selectedElements, nextElements);
 
+    // KuszCanvas CP5: newcomers dropped before the dwell land on top of the
+    // frame: in no frame, and above it in z-order (over its fill)
+    if (liveDecision?.outsidersOnTop) {
+      const dropFrameId = liveDecision.frameId;
+      const outsiders = selectedElements.filter(
+        (element) => element.frameId !== dropFrameId,
+      );
+      const map = arrayToMap(nextElements);
+      removeElementsFromFrame(
+        outsiders.filter((element) => element.frameId),
+        map,
+      );
+      const raise = new Set<string>();
+      for (const element of outsiders) {
+        raise.add(element.id);
+        const boundText = getBoundTextElement(element, map);
+        if (boundText) {
+          raise.add(boundText.id);
+        }
+      }
+      const placed = placeElementsAboveFrame(
+        [...nextElements.values()],
+        raise,
+        dropFrameId,
+      );
+      if (placed.moved.length) {
+        syncMovedIndices(placed.elements, arrayToMap(placed.moved));
+        nextElements = toBrandedType<SceneElementsMap>(
+          arrayToMap(placed.elements),
+        );
+      }
+    }
+
     this.app.scene.replaceAllElements(nextElements);
+
+    // grow the frames the dragged elements now sit in, within this same
+    // update (and so the drag's undo step)
+    expandFramesToFitElements(
+      this.app.scene
+        .getSelectedElements(this.app.state)
+        .map((element) => element.frameId),
+      this.app.scene,
+    );
   };
 
   /**

@@ -69,6 +69,8 @@ import {
   getColorUpdate,
   hasFillStyle,
   hasStrokeColor,
+  isStylableFrame,
+  markFrameStyleChange,
 } from "@excalidraw/element";
 
 import {
@@ -222,7 +224,12 @@ export const changeProperty = (
           "[NONDELETED][INVARIANT] changeProperty(): skipping deleted selected/editing element",
         );
       }
-      const nextElement = callback(element as NonDeletedExcalidrawElement);
+      // KuszCanvas: a legacy frame whose style changes opts into rectangle
+      // styling (no-op for every other element)
+      const nextElement = markFrameStyleChange(
+        element,
+        callback(element as NonDeletedExcalidrawElement),
+      );
       // sticky notes keep their data invariants (never-transparent colors,
       // solid fill, minimum size) whatever property was written; a no-op
       // normalization returns the same object
@@ -422,7 +429,7 @@ export const actionChangeStrokeColor = register<
               }
             }
             // zsviczian END
-            return hasStrokeColor(el.type)
+            return hasStrokeColor(el.type) || isStylableFrame(el) // KuszCanvas
               ? newElementWith(
                   el,
                   getColorUpdate(el, "strokeColor", color, elementsMap),
@@ -664,7 +671,9 @@ export const actionChangeFillStyle = register<ExcalidrawElement["fillStyle"]>({
     );
     return {
       elements: changeProperty(elements, appState, (el) =>
-        hasFillStyle(el.type) ? newElementWith(el, { fillStyle: value }) : el,
+        hasFillStyle(el.type) || isStylableFrame(el) // KuszCanvas
+          ? newElementWith(el, { fillStyle: value })
+          : el,
       ),
       appState: { ...appState, currentItemFillStyle: value },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -672,8 +681,8 @@ export const actionChangeFillStyle = register<ExcalidrawElement["fillStyle"]>({
   },
   PanelComponent: ({ elements, appState, updateData, app }) => {
     const selectedElements = getSelectedElements(elements, appState);
-    const selectedFillStyleElements = selectedElements.filter((element) =>
-      hasFillStyle(element.type),
+    const selectedFillStyleElements = selectedElements.filter(
+      (element) => hasFillStyle(element.type) || isStylableFrame(element), // KuszCanvas
     );
     const allElementsZigZag =
       selectedFillStyleElements.length > 0 &&
@@ -712,7 +721,8 @@ export const actionChangeFillStyle = register<ExcalidrawElement["fillStyle"]>({
               elements,
               app,
               (element) => element.fillStyle,
-              (element) => hasFillStyle(element.type),
+              (element) =>
+                hasFillStyle(element.type) || isStylableFrame(element), // KuszCanvas
               (hasSelection) =>
                 hasSelection ? null : appState.currentItemFillStyle,
             )}

@@ -41,6 +41,7 @@ import {
   newTextElement,
   refreshTextDimensions,
   updateBoundElements,
+  expandFramesToFitElements,
 } from "@excalidraw/element";
 
 import type { ArrowEndpoint } from "@excalidraw/element";
@@ -171,13 +172,16 @@ export class AppText {
     );
   };
 
+  /**
+   * Opens the text editor on the element. If the editor fails to open (in the
+   * web harness, for one, the host's link suggester throws without an
+   * Obsidian host), the half-started edit is rolled back before the error is
+   * rethrown: an `editingTextElement` with no editor would make every later
+   * pointer gesture a no-op.
+   */
   public handleTextWysiwyg(
     element: NonDeleted<ExcalidrawTextElement>,
-    {
-      isExistingElement = false,
-      initialCaretSceneCoords = null,
-      initialSelection = null,
-    }: {
+    options: {
       isExistingElement?: boolean;
       /**
        * supply null if no caret positioning is desired, and instead
@@ -185,6 +189,56 @@ export class AppText {
        */
       initialCaretSceneCoords?: { x: number; y: number } | null;
       /** range of the text to select (takes precedence over the caret) */
+      initialSelection?: { start: number; end: number } | null;
+    },
+  ) {
+    try {
+      this.openTextWysiwyg(element, options);
+    } catch (error) {
+      this.abortFailedTextEditing(element, !!options.isExistingElement);
+      throw error;
+    }
+  }
+
+  /** Undoes what starting an edit did, for an editor that failed to open. */
+  private abortFailedTextEditing(
+    element: NonDeleted<ExcalidrawTextElement>,
+    isExistingElement: boolean,
+  ) {
+    if (!isExistingElement) {
+      // the text was created for this edit: it goes again, with its binding
+      const latest = this.app.scene.getElement(element.id);
+      if (latest && isTextElement(latest) && !latest.isDeleted) {
+        const container = getContainerElement(
+          latest,
+          this.app.scene.getElementsMapIncludingDeleted(),
+        );
+        this.app.scene.mutateElement(latest, { isDeleted: true });
+        if (container) {
+          this.app.scene.mutateElement(container, {
+            boundElements: (container.boundElements || []).filter(
+              (bound) => bound.id !== latest.id,
+            ),
+          });
+        }
+        fixBindingsAfterDeletion(this.app.scene.getNonDeletedElements(), [
+          latest,
+        ]);
+      }
+    }
+    this.textWysiwygSubmitHandler = null;
+    this.app.setState({ editingTextElement: null, newElement: null });
+  }
+
+  private openTextWysiwyg(
+    element: NonDeleted<ExcalidrawTextElement>,
+    {
+      isExistingElement = false,
+      initialCaretSceneCoords = null,
+      initialSelection = null,
+    }: {
+      isExistingElement?: boolean;
+      initialCaretSceneCoords?: { x: number; y: number } | null;
       initialSelection?: { start: number; end: number } | null;
     },
   ) {
@@ -292,6 +346,13 @@ export class AppText {
           });
         }
       }
+
+      // the text, or the note/shape it grew, may now reach past its frame;
+      // captured with the text edit, so one undo step reverts both
+      expandFramesToFitElements(
+        [container?.frameId, latestTextElement.frameId],
+        this.app.scene,
+      );
     };
 
     element = prepareObsidianTextForEditing(

@@ -39,6 +39,13 @@ import { getCornerRadius, isPathALoop } from "@excalidraw/element";
 
 import { ShapeCache } from "@excalidraw/element";
 import {
+  getFrameDrawableForPass,
+  getFrameFillAnchors,
+  isShapeStyledFrame,
+  isStylableFrame,
+  resolveFrameRenderStyle,
+} from "@excalidraw/element";
+import {
   getStickyNoteFillColor,
   getStickyNoteFooter,
   getStickyNotePathCommands,
@@ -49,6 +56,7 @@ import {
 
 import { getElementAbsoluteCoords } from "@excalidraw/element";
 
+import type { FrameRenderPass } from "@excalidraw/element";
 import type {
   ExcalidrawElement,
   ExcalidrawTextElementWithContainer,
@@ -112,6 +120,8 @@ const renderElementToSvg = (
   offsetX: number,
   offsetY: number,
   renderConfig: SVGRenderConfig,
+  /** KuszCanvas: see `renderElement`'s `framePass` */
+  framePass: FrameRenderPass = "full",
 ) => {
   const offset = { x: offsetX, y: offsetY };
   const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
@@ -851,7 +861,43 @@ const renderElementToSvg = (
     // frames are not rendered and only acts as a container
     case "frame":
     case "magicframe": {
+      // KuszCanvas: regular frames are drawn like rectangles; legacy frames
+      // keep the host palette's outline colour
       if (
+        isStylableFrame(element) &&
+        renderConfig.frameRendering.enabled &&
+        renderConfig.frameRendering.outline
+      ) {
+        const shape = ShapeCache.generateElementShape(element, renderConfig);
+        if (!shape) {
+          break;
+        }
+        const strokeOverride = isShapeStyledFrame(element)
+          ? null
+          : applyDarkModeFilter(
+              resolveFrameRenderStyle(element, renderConfig.frameColor)
+                .strokeColor,
+              renderConfig.theme === THEME.DARK,
+            );
+        const node = roughSVGDrawWithPrecision(
+          rsvg,
+          getFrameDrawableForPass(shape, framePass, strokeOverride),
+          MAX_DECIMALS_FOR_SVG_EXPORT,
+        );
+        if (opacity !== 1) {
+          node.setAttribute("stroke-opacity", `${opacity}`);
+          node.setAttribute("fill-opacity", `${opacity}`);
+        }
+        node.setAttribute("stroke-linecap", "round");
+        node.setAttribute(
+          "transform",
+          `translate(${offsetX || 0} ${
+            offsetY || 0
+          }) rotate(${degree} ${cx} ${cy})`,
+        );
+        addToRoot(node, element);
+      } else if (
+        framePass !== "fill" &&
         renderConfig.frameRendering.enabled &&
         renderConfig.frameRendering.outline &&
         !(!renderConfig.frameRendering.markerEnabled &&
@@ -886,12 +932,8 @@ const renderElementToSvg = (
             )
           })(),
         );
-        rect.setAttribute(
-          "stroke-width",
-          element.customData?.frameColor?.fill ?? //zsviczian
-            renderConfig.frameColor?.fill ?? //zsviczian
-            FRAME_STYLE.strokeWidth.toString(), //zsviczian
-        );
+        // KuszCanvas: was filled from `frameColor.fill` (a colour) by mistake
+        rect.setAttribute("stroke-width", FRAME_STYLE.strokeWidth.toString());
 
         addToRoot(rect, element);
       }
@@ -984,11 +1026,40 @@ export const renderSceneToSvg = (
     return;
   }
 
+  // KuszCanvas: a filled shape frame paints its fill below its lowest child
+  // and its outline at its own z-index (see `getFrameFillAnchors`)
+  const paintedElements = elements.filter(
+    (el) => !isIframeLikeElement(el) && !el.isDeleted,
+  );
+  const frameFillAnchors = getFrameFillAnchors(paintedElements);
+  const separatelyFilledFrameIds = new Set<string>();
+  frameFillAnchors.forEach((frames) =>
+    frames.forEach((frame) => separatelyFilledFrameIds.add(frame.id)),
+  );
+
   // render elements
   elements
     .filter((el) => !isIframeLikeElement(el))
     .forEach((element) => {
       if (!element.isDeleted) {
+        frameFillAnchors.get(element.id)?.forEach((frame) => {
+          try {
+            renderElementToSvg(
+              frame,
+              elementsMap,
+              rsvg,
+              svgRoot,
+              files,
+              frame.x + renderConfig.offsetX,
+              frame.y + renderConfig.offsetY,
+              renderConfig,
+              "fill",
+            );
+          } catch (error: any) {
+            console.error(error);
+          }
+        });
+
         if (
           isTextElement(element) &&
           element.containerId &&
@@ -1008,6 +1079,7 @@ export const renderSceneToSvg = (
             element.x + renderConfig.offsetX,
             element.y + renderConfig.offsetY,
             renderConfig,
+            separatelyFilledFrameIds.has(element.id) ? "stroke" : "full",
           );
 
           const boundTextElement = getBoundTextElement(element, elementsMap);

@@ -77,6 +77,12 @@ import {
 } from "./typeChecks";
 import { getFreeDrawSvgPath } from "./freedrawPath"; // zsviczian -- persisted custom pen paths
 import { getContainingFrame } from "./frame";
+import {
+  getFrameDrawableForPass,
+  isShapeStyledFrame,
+  isStylableFrame,
+  resolveFrameRenderStyle,
+} from "./frameStyle";
 import { getCornerRadius } from "./utils";
 
 import { ShapeCache } from "./shape";
@@ -91,6 +97,7 @@ import {
 } from "./stickyNote";
 
 import type { RenderEnvironment } from "./renderEnvironment";
+import type { FrameRenderPass } from "./frameStyle";
 
 import type {
   ExcalidrawElement,
@@ -102,6 +109,7 @@ import type {
   ExcalidrawTextElementWithContainer,
   NonDeletedSceneElementsMap,
   ElementsMap,
+  ExcalidrawFrameElement,
 } from "./types";
 
 import type { RoughCanvas } from "roughjs/bin/canvas";
@@ -1141,6 +1149,12 @@ export const renderElement = (
     renderConfig,
     allElementsMap,
   ),
+  /**
+   * KuszCanvas: which part of a stylable frame to paint. The static scene
+   * paints a filled frame's "fill" below its children and its "stroke" at
+   * the frame's own z-index; everything else paints in full.
+   */
+  framePass: FrameRenderPass = "full",
 ) => {
   const reduceAlphaForSelection =
     appState.openDialog?.name === "elementLinkSelector" &&
@@ -1169,10 +1183,69 @@ export const renderElement = (
       renderConfig,
       appState,
       renderState,
+      framePass,
     );
   } finally {
     context.restore();
   }
+};
+
+/**
+ * KuszCanvas: a RoughCanvas bound to `context`'s own canvas. A caller's `rc`
+ * may belong to another canvas — the editor passes its static canvas'
+ * RoughCanvas to the new-element render — and drawing a frame through it
+ * would paint every intermediate size onto the static canvas while dragging.
+ * Keyed per canvas, so popout windows get their own.
+ */
+const contextRoughCanvases = new WeakMap<
+  CanvasRenderingContext2D["canvas"],
+  RoughCanvas
+>();
+const getRoughCanvasForContext = (context: CanvasRenderingContext2D) => {
+  if (!context?.canvas) {
+    throw new Error("getRoughCanvasForContext(): context has no canvas");
+  }
+  let rc = contextRoughCanvases.get(context.canvas);
+  if (!rc) {
+    rc = rough.canvas(context.canvas);
+    contextRoughCanvases.set(context.canvas, rc);
+  }
+  return rc;
+};
+
+/**
+ * KuszCanvas: draws a regular frame through its cached rough rectangle.
+ * Legacy frames swap in the host palette's outline colour.
+ */
+const drawStylableFrame = (
+  element: ExcalidrawFrameElement,
+  context: CanvasRenderingContext2D,
+  renderConfig: StaticCanvasRenderConfig,
+  appState: StaticCanvasAppState | InteractiveCanvasAppState,
+  framePass: FrameRenderPass,
+) => {
+  const shape = ShapeCache.generateElementShape(element, renderConfig);
+  if (!shape) {
+    return;
+  }
+  const isDarkMode = renderConfig.theme === THEME.DARK;
+  const strokeOverride = isShapeStyledFrame(element)
+    ? null
+    : applyDarkModeFilter(
+        resolveFrameRenderStyle(element, appState.frameColor).strokeColor,
+        isDarkMode,
+      );
+  withSavedContext(context, () => {
+    context.translate(
+      element.x + appState.scrollX,
+      element.y + appState.scrollY,
+    );
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    getRoughCanvasForContext(context).draw(
+      getFrameDrawableForPass(shape, framePass, strokeOverride),
+    );
+  });
 };
 
 const drawElement = (
@@ -1184,11 +1257,19 @@ const drawElement = (
   renderConfig: StaticCanvasRenderConfig,
   appState: StaticCanvasAppState | InteractiveCanvasAppState,
   renderState: ElementRenderState,
+  framePass: FrameRenderPass,
 ) => {
   switch (element.type) {
     case "magicframe":
     case "frame": {
       if (
+        appState.frameRendering.enabled &&
+        appState.frameRendering.outline &&
+        isStylableFrame(element)
+      ) {
+        drawStylableFrame(element, context, renderConfig, appState, framePass);
+      } else if (
+        framePass !== "fill" &&
         appState.frameRendering.enabled &&
         appState.frameRendering.outline &&
         !(

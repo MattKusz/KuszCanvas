@@ -110,7 +110,11 @@ import {
   LinearElementEditor,
   newElementWith,
   newFrameElement,
+  getFrameCreationStyle,
+  getCurrentItemFrameShapeStyle,
   newFreeDrawElement,
+  appendFreedrawStrokePoint,
+  createFreedrawSnapState,
   newEmbeddableElement,
   newMagicFrameElement,
   newStickyNoteElement,
@@ -174,6 +178,7 @@ import {
   getContainingFrame,
   elementOverlapsWithFrame,
   updateFrameMembershipOfSelectedElements,
+  expandFramesToFitElements,
   getFrameLikeTitle,
   getElementsOverlappingFrame,
   hitElementBoundText,
@@ -421,6 +426,7 @@ import {
   selectGroupsForSelectedElements,
 } from "./App.selection";
 import { AppSelectionTool } from "./App.selectionTool";
+import { AppFrameLiveExpand } from "./App.frameLiveExpand";
 import { AppWrap } from "./App.wrap";
 import BraveMeasureTextError from "./BraveMeasureTextError";
 import { ContextMenu, CONTEXT_MENU_SEPARATOR } from "./ContextMenu";
@@ -725,6 +731,22 @@ class App extends React.Component<AppProps, AppState> {
   public wheel: AppWheel = new AppWheel(this);
   public selection: AppSelection = new AppSelection(this);
   public selectionTool: AppSelectionTool = new AppSelectionTool(this);
+  // KuszCanvas CP5: frames grow live under a drag or stroke; timers come from
+  // the window that owns the editor at the time (popout-safe)
+  public frameLiveExpand: AppFrameLiveExpand = new AppFrameLiveExpand({
+    getScene: () => this.scene,
+    getScheduler: () => {
+      const win = this.ownerWindow;
+      return {
+        now: () => win.performance.now(),
+        setTimeout: (fn, ms) => win.setTimeout(fn, ms),
+        clearTimeout: (id) => win.clearTimeout(id),
+        requestAnimationFrame: (fn) => win.requestAnimationFrame(fn),
+        cancelAnimationFrame: (id) => win.cancelAnimationFrame(id),
+      };
+    },
+    onPreviewFrameChange: (frame) => this.updateFrameToHighlight(frame),
+  });
   public wrap: AppWrap = new AppWrap(this);
 
   bindModeHandler: ReturnType<typeof setTimeout> | null = null;
@@ -4069,6 +4091,7 @@ class App extends React.Component<AppProps, AppState> {
   }
 
   public componentWillUnmount() {
+    this.frameLiveExpand.cancel(false); // KuszCanvas CP5: no timers outlive the editor
     // we're recreating the api object reference so that the
     // <ExcalidrawAPIContext.Provider/> picks up on it
     this.api = { ...this.api, isDestroyed: true };
@@ -4519,6 +4542,11 @@ class App extends React.Component<AppProps, AppState> {
       prevState === this.state
     ) {
       return;
+    }
+
+    // KuszCanvas CP5: a tool change ends any live frame growth
+    if (prevState.activeTool.type !== this.state.activeTool.type) {
+      this.frameLiveExpand.cancel(false);
     }
 
     // must be updated *before* state change listeners are triggered below
@@ -5652,6 +5680,11 @@ class App extends React.Component<AppProps, AppState> {
   // Input handling
   private onKeyDown = withBatchedUpdates(
     (event: React.KeyboardEvent | KeyboardEvent) => {
+      // KuszCanvas CP5: Escape mid-gesture puts live-grown frames back (the
+      // key stops at the editor container; window listeners never see it)
+      if (event.key === KEYS.ESCAPE && this.frameLiveExpand.isActive()) {
+        this.frameLiveExpand.cancel(true);
+      }
       if (
         !this.isInteractionEnabled() &&
         //zsviczian #329 allow the Miro-style context-menu shortcut dispatched by navigation mode
@@ -8944,6 +8977,30 @@ class App extends React.Component<AppProps, AppState> {
     return true;
   }
 
+  // KuszCanvas CP3: per-stroke buffer for Shift-constrained freehand, keyed by
+  // the freedraw element being drawn (a stale buffer is ignored).
+  private freedrawSnap: {
+    elementId: ExcalidrawFreeDrawElement["id"];
+    state: ReturnType<typeof createFreedrawSnapState>;
+  } | null = null;
+
+  private appendFreedrawPoint = (
+    element: ExcalidrawFreeDrawElement,
+    rawPoint: LocalPoint,
+    shiftKey: boolean,
+  ) => {
+    const step = appendFreedrawStrokePoint(
+      this.freedrawSnap?.elementId === element.id
+        ? this.freedrawSnap.state
+        : createFreedrawSnapState(),
+      element.points,
+      rawPoint,
+      shiftKey,
+    );
+    this.freedrawSnap = { elementId: element.id, state: step.state };
+    return step;
+  };
+
   private handleFreeDrawElementOnPointerDown = (
     event: React.PointerEvent<HTMLElement>,
     elementType: ExcalidrawFreeDrawElement["type"],
@@ -9591,15 +9648,15 @@ class App extends React.Component<AppProps, AppState> {
       ...(type === "frame" && this.state.currentItemFrameRole
         ? { frameRole: this.state.currentItemFrameRole }
         : {}),
-      ...FRAME_STYLE,
-      ...(this.state.frameColor
-        ? {
-            //zsviczian
-            customData: {
-              frameColor: this.state.frameColor,
-            },
-          }
-        : {}),
+      // KuszCanvas: regular frames take the current-item styles and are drawn
+      // like rectangles; marker frames and magic frames keep FRAME_STYLE and
+      // the host frame palette
+      ...getFrameCreationStyle({
+        type,
+        frameRole: type === "frame" ? this.state.currentItemFrameRole : null,
+        currentItemStyle: getCurrentItemFrameShapeStyle(this.state),
+        hostFrameColor: this.state.frameColor,
+      }),
     } as const;
 
     const frame =
@@ -10023,15 +10080,17 @@ class App extends React.Component<AppProps, AppState> {
         }
 
         if (newElement.type === "freedraw") {
-          const points = newElement.points;
           const dx = pointerCoords.x - newElement.x;
           const dy = pointerCoords.y - newElement.y;
 
-          const lastPoint = points.length > 0 && points[points.length - 1];
-          const discardPoint =
-            lastPoint && lastPoint[0] === dx && lastPoint[1] === dy;
+          // KuszCanvas CP3: Shift snaps the stroke after the anchor to 0/45/90°
+          const step = this.appendFreedrawPoint(
+            newElement,
+            pointFrom<LocalPoint>(dx, dy),
+            event.shiftKey,
+          );
 
-          if (!discardPoint) {
+          if (step.appended) {
             const strokeOptions = this.state.currentStrokeOptions; //zsviczian
             const pressures = newElement.simulatePressure
               ? newElement.pressures
@@ -10044,7 +10103,7 @@ class App extends React.Component<AppProps, AppState> {
             this.scene.mutateElement(
               newElement,
               {
-                points: [...points, pointFrom<LocalPoint>(dx, dy)],
+                points: step.points,
                 pressures,
               },
               {
@@ -10052,6 +10111,8 @@ class App extends React.Component<AppProps, AppState> {
                 isDragging: false,
               },
             );
+            // KuszCanvas CP5: the frame the stroke started in grows live
+            this.frameLiveExpand.freedrawMove(newElement);
 
             this.setState({
               newElement,
@@ -10167,6 +10228,10 @@ class App extends React.Component<AppProps, AppState> {
       if (pointerDownState.eventListeners.onMove) {
         pointerDownState.eventListeners.onMove.flush();
       }
+
+      // KuszCanvas CP5: frames grown live under this gesture take their final
+      // size now, within this release (and so within its undo step)
+      this.frameLiveExpand.settle();
 
       this.textTool.handlePointerUp(childEvent, pointerDownState);
 
@@ -10450,10 +10515,24 @@ class App extends React.Component<AppProps, AppState> {
           ? []
           : [...newElement.pressures, childEvent.pressure];
 
+        // KuszCanvas CP3: project the final point if Shift is still held. A
+        // repeat of the last raw point re-appends the last displayed (snapped)
+        // point, so the stroke always gains exactly one point here.
+        const step = this.appendFreedrawPoint(
+          newElement,
+          pointFrom<LocalPoint>(dx, dy),
+          childEvent.shiftKey,
+        );
+        this.freedrawSnap = null;
+
         this.scene.mutateElement(newElement, {
-          points: [...points, pointFrom<LocalPoint>(dx, dy)],
+          points: step.appended
+            ? step.points
+            : [...points, points[points.length - 1]],
           pressures,
         });
+        // KuszCanvas CP5: the frame also fits the final point (no-op usually)
+        expandFramesToFitElements([newElement.frameId], this.scene);
 
         this.actionManager.executeAction(actionFinalize);
 
@@ -10711,6 +10790,12 @@ class App extends React.Component<AppProps, AppState> {
             isDragging: false,
           },
         );
+        // a new frame grows to fit what it took in; a new element drawn in a
+        // frame grows that frame (same update, so the same undo step)
+        expandFramesToFitElements(
+          [isFrameLikeElement(newElement) ? newElement.id : newElement.frameId],
+          this.scene,
+        );
         // the above does not guarantee the scene to be rendered again, hence the trigger below
         this.scene.triggerUpdate();
       }
@@ -10798,6 +10883,16 @@ class App extends React.Component<AppProps, AppState> {
         }
 
         this.scene.replaceAllElements(nextElements);
+
+        // grow the frames of resized children; a frame being resized itself is
+        // left to the user, so resizing it smaller is not undone
+        expandFramesToFitElements(
+          this.scene
+            .getSelectedElements(this.state)
+            .filter((element) => !isFrameLikeElement(element))
+            .map((element) => element.frameId),
+          this.scene,
+        );
       }
 
       // Code below handles selection when element(s) weren't
@@ -11896,6 +11991,13 @@ class App extends React.Component<AppProps, AppState> {
 
     const newElement = this.state.newElement;
     if (!newElement) {
+      return;
+    }
+
+    // KuszCanvas CP3: a freedraw stroke is sized by its points, never by a
+    // drag box. Without this, pressing Shift mid-stroke (key handlers call
+    // this) would move the element's x/y and shift the whole stroke.
+    if (newElement.type === "freedraw") {
       return;
     }
 

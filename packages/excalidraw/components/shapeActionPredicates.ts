@@ -10,6 +10,8 @@ import {
   isLinearElement,
   isTextElement,
   hasStrokeColor,
+  isStylableFrame,
+  isStylableFrameTool,
   toolIsArrow,
 } from "@excalidraw/element";
 
@@ -57,7 +59,13 @@ export const canChangeStrokeColor = (
       commonSelectedType !== "image" &&
       commonSelectedType !== "frame" &&
       commonSelectedType !== "magicframe") ||
-    targetElements.some((element) => hasStrokeColor(element.type))
+    targetElements.some((element) => hasStrokeColor(element.type)) ||
+    // KuszCanvas: regular frames are styled like rectangles
+    isStylableFrameTool(
+      appState.activeTool.type,
+      appState.currentItemFrameRole,
+    ) ||
+    targetElements.some(isStylableFrame)
   );
 };
 
@@ -68,6 +76,12 @@ export const canChangeBackgroundColor = (
 ) => {
   return (
     hasBackground(appState.activeTool.type) ||
+    // KuszCanvas: regular frames are styled like rectangles
+    isStylableFrameTool(
+      appState.activeTool.type,
+      appState.currentItemFrameRole,
+    ) ||
+    targetElements.some(isStylableFrame) ||
     // a note's label (the target while editing it) has no fill, but a
     // background pick on it colors the note — so the picker stays available
     targetElements.some((element) =>
@@ -100,6 +114,14 @@ export const getShapeActionPredicates = (
   ) =>
     predicate(activeToolType) ||
     targetElements.some((element) => predicate(element.type));
+
+  // KuszCanvas: the rectangle style controls also cover regular frames (not
+  // marker frames, not magic frames) and the frame tool drawing them
+  const isFrameStyleTarget =
+    isStylableFrameTool(activeToolType, appState.currentItemFrameRole) ||
+    targetElements.some(isStylableFrame);
+  const forShapeOrFrame = (predicate: (type: ElementOrToolType) => boolean) =>
+    forToolOrSelection(predicate) || isFrameStyleTarget;
   
   //zsviczian
   const forFreedrawToolOrSelection = (
@@ -138,19 +160,21 @@ export const getShapeActionPredicates = (
       // bucket fill never renders transparent (it falls back to a real
       // color), so its fill style stays relevant either way
       activeToolType === "bucketfill" ||
-      (hasFillStyle(activeToolType) &&
+      ((hasFillStyle(activeToolType) ||
+        isStylableFrameTool(activeToolType, appState.currentItemFrameRole)) &&
         !isTransparent(appState.currentItemBackgroundColor)) ||
       targetElements.some(
         (element) =>
-          hasFillStyle(element.type) && !isTransparent(element.backgroundColor),
+          (hasFillStyle(element.type) || isStylableFrame(element)) &&
+          !isTransparent(element.backgroundColor),
       ),
 
     // stroke / shape properties
-    strokeWidth: forToolOrSelection(hasStrokeWidth),
+    strokeWidth: forShapeOrFrame(hasStrokeWidth),
     freedrawMode: forFreedrawToolOrSelection(hasFreedrawMode), //zsviczian
-    strokeStyle: forToolOrSelection(hasStrokeStyle),
-    sloppiness: forToolOrSelection(hasRoughness),
-    roundness: forToolOrSelection(canChangeRoundness),
+    strokeStyle: forShapeOrFrame(hasStrokeStyle),
+    sloppiness: forShapeOrFrame(hasRoughness),
+    roundness: forShapeOrFrame(canChangeRoundness),
     arrowType: forToolOrSelection(toolIsArrow),
     arrowheads: forToolOrSelection(canHaveArrowheads),
     frameRole: forToolOrSelection((type) => type === "frame"), //zsviczian

@@ -59,6 +59,7 @@ import { getCornerRadius, isPathALoop } from "./utils";
 import { headingForPointIsHorizontal } from "./heading";
 
 import { canChangeRoundness } from "./comparisons";
+import { isStylableFrame, resolveFrameRenderStyle } from "./frameStyle";
 import {
   CARDINALITY_INNER_BAR_OFFSET,
   CARDINALITY_ONE_OR_MANY_BAR_OFFSET,
@@ -1058,10 +1059,29 @@ const _generateElementShape = (
 
       return shapes;
     }
+    // KuszCanvas: regular frames are drawn like a rectangle. Legacy frames'
+    // outline colour comes from the host palette and is swapped in at draw
+    // time (`getFrameDrawableForPass`), so the cached geometry stays valid.
+    case "frame": {
+      if (!isStylableFrame(element)) {
+        // marker frames keep their own dashed renderer
+        return null;
+      }
+      const rectangle = {
+        ...element,
+        ...resolveFrameRenderStyle(element, null),
+        type: "rectangle",
+      } as const;
+      return _generateElementShape(rectangle, generator, {
+        isExporting,
+        canvasBackgroundColor,
+        embedsValidationStatus,
+        theme,
+      }) as ElementShapes["frame"];
+    }
     // sticky notes are painted directly (canvas + SVG) from
     // `getStickyNoteRenderPoints`, never through roughjs
     case "stickynote":
-    case "frame":
     case "magicframe":
     case "text":
     case "image": {

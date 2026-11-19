@@ -199,6 +199,6 @@ export type ElementShapes = {
   text: null;
   stickynote: null;
   image: null;
-  frame: null;
+  frame: Drawable | null; // KuszCanvas: regular frames are drawn like rectangles
   magicframe: null;
 };
