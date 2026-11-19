@@ -1,44 +1,44 @@
 # CLAUDE.md
 
-## Project Structure
+KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that builds the engine for the sibling `../KuszCanvas-Obsidian` plugin. Work on branch `kusch/whiteboard`.
 
-Excalidraw is a **monorepo** with a clear separation between the core library and the application:
+## Module map
 
-- **`packages/excalidraw/`** - Main React component library published to npm as `@excalidraw/excalidraw`
-- **`excalidraw-app/`** - Full-featured web application (excalidraw.com) that uses the library; on this fork it is the web test harness, see `excalidraw-app/CLAUDE.md`
-- **`packages/`** - Core packages: `@excalidraw/common`, `@excalidraw/element`, `@excalidraw/math`, `@excalidraw/utils`
-- **`examples/`** - Integration examples (NextJS, browser script)
+- `packages/excalidraw/` — editor React component, published by this repo as `@zsviczian/excalidraw`; `obsidian*.ts` holds the Obsidian host integration.
+- `packages/element/` — element model, geometry, frames and the canvas renderer (`renderElement.ts`, `shape.ts`).
+- `packages/common/`, `packages/math/`, `packages/utils/`, `packages/fractional-indexing/`, `packages/laser-pointer/` — shared helpers; `packages/common/src/commonObsidianHost.ts` is the render-side host contract.
+- `excalidraw-app/` — web test harness, not excalidraw.com; see `excalidraw-app/CLAUDE.md`.
+- `scripts/` — build scripts; `buildObsidianPackage.js` produces the consumer build.
 
-## Development Workflow
+## Naming and conventions
 
-1. **Package Development**: Work in `packages/*` for editor features
-2. **App Development**: Work in `excalidraw-app/` for app-specific features
-3. **Testing**: Run the tests you touched before committing. On this fork, do not run `test:update` across the whole suite; see the KuszCanvas section below
-4. **Type Safety**: Use `corepack yarn test:typecheck` to verify TypeScript
+- Put new editor interaction code in an `App.<concern>.ts` file next to `App.tsx` and keep `App.tsx` to thin call sites.
+- Put pure logic in `packages/element/src/<feature>.ts` with tests in `packages/element/tests/<feature>.test.ts`; keep timers, animation frames and scene mutation in the `App.*` file.
+- Mark changes inside upstream files with a `KuszCanvas:` comment; `//zsviczian` marks the parent fork's changes. Keep both when merging upstream.
+- Import internal packages by their `@excalidraw/*` name; `vitest.config.mts` and the tsconfigs alias them to source.
+- Commit messages use `type(scope): summary` (e.g. `feat(stickynote): …`, `docs(claude): …`).
+- Write LF line endings (`.gitattributes` sets `eol=lf`). Python and some Windows tools write CRLF by default; pass `newline="\n"` or convert back before finishing.
 
-## Development Commands
+## Contracts with the consumer
 
-```bash
-corepack yarn test:typecheck          # TypeScript type checking
-corepack yarn vitest run <file>       # Run targeted tests
-corepack yarn fix                     # Auto-fix formatting and linting issues
-```
+- Renderer and host-adapter changes are an internal protocol with `../KuszCanvas-Obsidian`: bump the protocol version and update the consumer adapter in the same change. The consumer restates the number in three files listed in its `CLAUDE.md`.
+- Tests that configure the common host use `OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION`, never a literal, so a bump only fails tests of the old contract.
+- The consumer vendors `packages/excalidraw/dist/obsidian/` and `types/` with its `npm run vendor:excalidraw`, which refuses a dirty engine tree. Commit before vendoring; never copy artifacts by hand or publish to npm.
 
-## Architecture Notes
+## Commands
 
-### Package System
+- `yarn` is not on PATH: run everything as `corepack yarn …`.
+- `corepack yarn test:typecheck` — TypeScript check.
+- `corepack yarn vitest run <file>` — targeted tests. `corepack yarn test` starts watch mode and never exits.
+- `corepack yarn build:obsidian` in `packages/excalidraw` — consumer build. Verify reproducibility on the production `.js`/`.css` only; the development bundle is not byte-reproducible.
+- `corepack yarn fix` — format and lint fixes.
+- Tell Matt to run `corepack yarn start` for the web harness (details in `excalidraw-app/CLAUDE.md`).
 
-- Uses Yarn workspaces for monorepo management
-- Internal packages use path aliases (see `vitest.config.mts`)
-- Build system uses esbuild for packages, Vite for the app
-- TypeScript throughout with strict configuration
+## Avoid
 
-## KuszCanvas fork (Obsidian consumer)
-
-- Work on branch `kusch/whiteboard`. The consumer is the sibling `../KuszCanvas-Obsidian` repo; it vendors this repo's `packages/excalidraw/dist/obsidian/` output and `types/` through its `npm run vendor:excalidraw`. Do not publish to npm or copy artifacts by hand.
-- `yarn` is not on PATH on this machine; run it as `corepack yarn …` (e.g. `corepack yarn build:obsidian` in `packages/excalidraw`).
-- Keep the tree clean before vendoring: the consumer's vendor script refuses uncommitted changes. Scratch files go in `.tmp/` (ignored by `.gitignore`).
-- Renderer and host-adapter changes are an internal protocol with the consumer: bump the protocol version and update the consumer adapter in the same checkpoint.
-- The development bundle (`excalidraw.development.js`) is not byte-reproducible against the published package; verify reproducibility on the production `.js`/`.css` only.
-- Run the full suite with `corepack yarn vitest run`; `corepack yarn test` starts watch mode and never exits. The full suite has about 1,500 pre-existing failures (snapshot mismatches and `App` not mounting). Do not run `test:update` across it, as that rewrites those snapshots. To check for regressions, run the suite with your changes stashed (`git stash push -u`), then with them, and diff the sorted `FAIL` lines; do not compare counts alone. `interactivity.test.tsx > programmatic viewport API still works` is flaky.
-- Tests that configure the common host must use `OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION`, not a literal, so a protocol bump only fails tests that exercise the old contract. The consumer restates the number in three files listed in its `CLAUDE.md`.
+- Never run `test:update` across the suite: about 1,500 tests fail at baseline (snapshot mismatches and `App` not mounting) and it would rewrite those snapshots. Update only snapshots you have inspected.
+- Don't rely on App-mounting tests (`h.elements` is undefined at baseline); test pure functions, or drive the harness with Playwright.
+- Regression check: compare sorted `FAIL` lines, not counts. Get the baseline from a clean worktree of HEAD outside the repo (`git worktree add --detach ../KuszCanvas-baseline HEAD`, then `corepack yarn install --frozen-lockfile --prefer-offline`), not `git stash`, which destroys work when other agents share the tree. Strip ANSI, `grep '^ FAIL '`, strip trailing `NNNms`, and sort both lists with `LC_ALL=C sort -u` before `comm`.
+- Flaky: `interactivity.test.tsx > programmatic viewport API still works` and the two `hostAbstraction.test.tsx > headless (server-side) export` tests.
+- When several agents share the working tree: no `git stash`/`reset`/`checkout --`/`clean`, one full-suite run at a time, and claim shared `App.tsx` regions in a coordination log under `.tmp/` before editing.
+- Scratch files go in `.tmp/` (ignored).
