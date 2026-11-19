@@ -388,6 +388,7 @@ export const newTextElement = (
     getFontString({ fontFamily, fontSize }),
     lineHeight,
     opts.renderEnvironment,
+    rawText, // KuszCanvas: source text resolves wrapped Markdown lines
   );
   const textAlign = opts.textAlign || DEFAULT_TEXT_ALIGN;
   const verticalAlign = opts.verticalAlign || DEFAULT_VERTICAL_ALIGN;
@@ -432,6 +433,8 @@ const getAdjustedDimensions = (
   /** the width the text is to take regardless of its content */
   nextFixedWidth?: number,
   renderEnvironment?: RenderEnvironment,
+  /** KuszCanvas: unwrapped text `nextText` came from, for Markdown layout */
+  sourceText?: string,
 ): {
   x: number;
   y: number;
@@ -443,6 +446,7 @@ const getAdjustedDimensions = (
     getFontString(element),
     element.lineHeight,
     renderEnvironment,
+    sourceText, // KuszCanvas
   );
 
   // wrapped text
@@ -466,6 +470,7 @@ const getAdjustedDimensions = (
       getFontString(element),
       element.lineHeight,
       renderEnvironment,
+      element.originalText, // KuszCanvas
     );
     const offsets = getTextElementPositionOffsets(element, {
       width: nextWidth - prevMetrics.width,
@@ -585,6 +590,7 @@ export const refreshTextDimensions = (
   if (textElement.isDeleted) {
     return;
   }
+  const sourceText = text; // KuszCanvas: unwrapped text, for Markdown layout
   if (
     maxWidth !== undefined &&
     !container &&
@@ -606,6 +612,7 @@ export const refreshTextDimensions = (
           wrappedText,
           maxWidth,
           renderEnvironment,
+          sourceText, // KuszCanvas
         ),
       };
     }
@@ -626,6 +633,7 @@ export const refreshTextDimensions = (
     text,
     undefined,
     renderEnvironment,
+    sourceText, // KuszCanvas
   );
   return { text, ...dimensions };
 };

@@ -398,6 +398,7 @@ export const resizeSingleTextElement = (
       getFontString(element),
       element.lineHeight,
       renderEnvironment,
+      element.originalText, // KuszCanvas: resolves wrapped Markdown lines
     );
 
     const newHeight = metrics.height;

@@ -29,6 +29,7 @@ import {
   getWidthHeightLimit, // zsviczian -- host canvas limits
   isBlackboardModeEnabled, // KuszCanvas -- host render flags
   isMarkdownTextRenderingEnabled, // KuszCanvas -- host render flags
+  getMarkdownAccentColor, // KuszCanvas -- Markdown tag colour
   STICKY_NOTE_EDGE_SHADOW_OPACITY,
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
   STICKY_NOTE_BOTTOM_SHADE,
@@ -62,7 +63,9 @@ import {
   getBoundTextMaxHeight,
   getBoundTextMaxWidth,
 } from "./textElement";
-import { getLineHeightInPx } from "./textMeasurements";
+import { getLineHeightInPx, getLineWidth } from "./textMeasurements"; // KuszCanvas: getLineWidth measures Markdown runs
+import { layoutMarkdownText } from "./markdownTextLayout"; // KuszCanvas
+import { drawMarkdownText } from "./markdownTextRender"; // KuszCanvas
 import {
   isTextElement,
   isLinearElement,
@@ -247,7 +250,13 @@ export interface ExcalidrawElementWithCanvas {
   /** KuszCanvas: host render flags the bitmap was drawn with */
   blackboardMode: boolean;
   markdownText: boolean;
+  /** KuszCanvas: tag colour the bitmap was drawn with; null while Markdown is off */
+  markdownAccent: string | null;
 }
+
+/** KuszCanvas: the accent colour a bitmap depends on (none while Markdown is off). */
+const getMarkdownAccentKey = (): string | null =>
+  isMarkdownTextRenderingEnabled() ? getMarkdownAccentColor() : null;
 
 const cappedElementCanvasSize = (
   element: NonDeletedExcalidrawElement,
@@ -372,6 +381,7 @@ const generateElementCanvas = (
     imageCrop: isImageElement(element) ? element.crop : null,
     blackboardMode: isBlackboardModeEnabled(),
     markdownText: isMarkdownTextRenderingEnabled(),
+    markdownAccent: getMarkdownAccentKey(),
   };
 };
 
@@ -818,6 +828,36 @@ const drawElementOnCanvas = (
             lineHeightPx,
           );
 
+          // KuszCanvas START -- inline Markdown, laid out as it was measured
+          const markdownLayout =
+            !rtl && isMarkdownTextRenderingEnabled()
+              ? layoutMarkdownText(
+                  element.text,
+                  getFontString(element),
+                  (line, font) =>
+                    getLineWidth(line, font, renderConfig.renderEnvironment),
+                  element.originalText,
+                )
+              : null;
+          if (markdownLayout) {
+            drawMarkdownText(context, {
+              layout: markdownLayout,
+              font: getFontString(element),
+              width: element.width,
+              textAlign: element.textAlign,
+              fontSize: element.fontSize,
+              lineHeightPx,
+              verticalOffset,
+              color: applyDarkModeFilter(
+                element.strokeColor,
+                renderConfig.theme === THEME.DARK,
+              ),
+              accentColor: getMarkdownAccentColor(),
+            });
+            return;
+          }
+          // KuszCanvas END
+
           for (let index = 0; index < lines.length; index++) {
             context.fillText(
               lines[index],
@@ -870,7 +910,8 @@ const generateElementWithCanvas = (
     prevElementWithCanvas.imageCrop !== imageCrop ||
     prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity ||
     prevElementWithCanvas.blackboardMode !== isBlackboardModeEnabled() ||
-    prevElementWithCanvas.markdownText !== isMarkdownTextRenderingEnabled()
+    prevElementWithCanvas.markdownText !== isMarkdownTextRenderingEnabled() ||
+    prevElementWithCanvas.markdownAccent !== getMarkdownAccentKey()
   ) {
     const elementWithCanvas = generateElementCanvas(
       element,

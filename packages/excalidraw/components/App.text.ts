@@ -43,6 +43,7 @@ import {
   updateBoundElements,
   expandFramesToFitElements,
 } from "@excalidraw/element";
+import { withRawTextLayout } from "@excalidraw/element"; // KuszCanvas
 
 import type { ArrowEndpoint } from "@excalidraw/element";
 import type {
@@ -378,12 +379,16 @@ export class AppText {
         ];
       },
       onChange: withBatchedUpdates((nextOriginalText) => {
-        updateElement(nextOriginalText, false);
-        if (isNonDeletedElement(element)) {
-          updateBoundElements(element, this.app.scene, {
-            renderEnvironment: this.app.renderEnvironment,
-          });
-        }
+        // KuszCanvas: the editor shows raw Markdown, so size it as raw text;
+        // submit re-measures it as rendered Markdown
+        withRawTextLayout(() => {
+          updateElement(nextOriginalText, false);
+          if (isNonDeletedElement(element)) {
+            updateBoundElements(element, this.app.scene, {
+              renderEnvironment: this.app.renderEnvironment,
+            });
+          }
+        });
       }),
       onSubmit: withBatchedUpdates(({ viaKeyboard, nextOriginalText }) => {
         this.textWysiwygSubmitHandler = null;
@@ -493,7 +498,7 @@ export class AppText {
 
     // do an initial update to re-initialize element position since we were
     // modifying element's x/y for sake of editor (case: syncing to remote)
-    updateElement(element.originalText, false);
+    withRawTextLayout(() => updateElement(element.originalText, false)); // KuszCanvas: raw while editing
   }
 
   private getSelectedTextElement(

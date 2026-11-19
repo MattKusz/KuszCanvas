@@ -15,6 +15,9 @@ import {
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
   STICKY_NOTE_BOTTOM_SHADE,
   STICKY_NOTE_FOOTER,
+  getFontString, // KuszCanvas -- Markdown text layout
+  getMarkdownAccentColor, // KuszCanvas
+  isMarkdownTextRenderingEnabled, // KuszCanvas
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import { hashString } from "@excalidraw/element";
@@ -26,6 +29,11 @@ import {
 import { LinearElementEditor } from "@excalidraw/element";
 import { getBoundTextElement, getContainerElement } from "@excalidraw/element";
 import { getLineHeightInPx } from "@excalidraw/element";
+import {
+  getLineWidth,
+  getMarkdownPaintOps,
+  layoutMarkdownText,
+} from "@excalidraw/element"; // KuszCanvas -- Markdown text export
 import {
   isArrowElement,
   isIframeLikeElement,
@@ -64,6 +72,9 @@ import type {
 } from "@excalidraw/element/types";
 
 import { getFreeDrawSvgPath } from "../../element/src/freedrawPath";
+
+import { appendMarkdownPaintOpsToSvg } from "./markdownTextSvg"; // KuszCanvas
+
 import type { RenderableElementsMap, SVGRenderConfig } from "../scene/types";
 import type { AppState, BinaryFiles } from "../types";
 import type { Drawable } from "roughjs/bin/core";
@@ -970,13 +981,46 @@ const renderElementToSvg = (
           lineHeightPx,
         );
         const direction = isRTL(element.text) ? "rtl" : "ltr";
+        // KuszCanvas START -- inline Markdown, same layout as the canvas
+        const markdownLayout =
+          direction === "ltr" && isMarkdownTextRenderingEnabled()
+            ? layoutMarkdownText(
+                element.text,
+                getFontString(element),
+                (line, font) =>
+                  getLineWidth(line, font, renderConfig.renderEnvironment),
+                element.originalText,
+              )
+            : null;
+        if (markdownLayout) {
+          appendMarkdownPaintOpsToSvg(
+            node,
+            getMarkdownPaintOps({
+              layout: markdownLayout,
+              font: getFontString(element),
+              width: element.width,
+              textAlign: element.textAlign,
+              fontSize: element.fontSize,
+              lineHeightPx,
+              verticalOffset,
+              color: applyDarkModeFilter(
+                element.strokeColor,
+                renderConfig.theme === THEME.DARK,
+              ),
+              accentColor: getMarkdownAccentColor(),
+            }),
+            getFontFamilyString(element),
+            element.fontSize,
+          );
+        }
+        // KuszCanvas END
         const textAnchor =
           element.textAlign === "center"
             ? "middle"
             : element.textAlign === "right" || direction === "rtl"
             ? "end"
             : "start";
-        for (let i = 0; i < lines.length; i++) {
+        for (let i = 0; !markdownLayout && i < lines.length; i++) {
           const text = svgRoot.ownerDocument.createElementNS(SVG_NS, "text");
           text.textContent = lines[i];
           text.setAttribute("x", `${horizontalOffset}`);

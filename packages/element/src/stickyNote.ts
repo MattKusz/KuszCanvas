@@ -949,7 +949,7 @@ export const getStickyNoteLayout = (
     return {
       text,
       fontSize,
-      ...measureText(text, font, lineHeight, renderEnvironment),
+      ...measureText(text, font, lineHeight, renderEnvironment, originalText), // KuszCanvas
     };
   };
 

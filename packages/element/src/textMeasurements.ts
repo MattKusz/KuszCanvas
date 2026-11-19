@@ -7,6 +7,8 @@ import {
   normalizeEOL,
 } from "@excalidraw/common";
 
+import { layoutMarkdownText } from "./markdownTextLayout"; // KuszCanvas -- Markdown text
+import { isMarkdownTextLayoutActive } from "./markdownTextMode"; // KuszCanvas -- Markdown text
 import { getRenderEnvironment } from "./renderEnvironment";
 
 import type { RenderEnvironment } from "./renderEnvironment";
@@ -18,6 +20,11 @@ export const measureText = (
   font: FontString,
   lineHeight: ExcalidrawTextElement["lineHeight"],
   env?: RenderEnvironment,
+  /**
+   * KuszCanvas: the unwrapped text `text` was wrapped from, so Markdown
+   * measuring tells wrapped tails from new list items. Optional.
+   */
+  sourceText?: string,
 ) => {
   const _text = text
     .split("\n")
@@ -27,8 +34,33 @@ export const measureText = (
     .join("\n");
   const fontSize = parseFloat(font);
   const height = getTextHeight(_text, fontSize, lineHeight);
-  const width = getTextWidth(_text, font, env);
+  // KuszCanvas: rendered Markdown width (markers take no space)
+  const width =
+    getMarkdownTextWidth(text, font, env, sourceText) ??
+    getTextWidth(_text, font, env);
   return { width, height };
+};
+
+/**
+ * KuszCanvas: the rendered width of `text` as Markdown, or `null` when
+ * Markdown layout is off or the text renders like raw text.
+ */
+const getMarkdownTextWidth = (
+  text: string,
+  font: FontString,
+  env: RenderEnvironment | undefined,
+  sourceText: string | undefined,
+): number | null => {
+  if (!isMarkdownTextLayoutActive()) {
+    return null;
+  }
+  const layout = layoutMarkdownText(
+    normalizeText(text),
+    font,
+    (line, lineFont) => getLineWidth(line, lineFont, env),
+    sourceText === undefined ? undefined : normalizeText(sourceText),
+  );
+  return layout ? layout.width : null;
 };
 
 const DUMMY_TEXT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toLocaleUpperCase();

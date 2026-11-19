@@ -834,7 +834,21 @@ body.excalidraw-cursor-resize * {
     box-shadow: none;
     border-radius: 0;
   }
-  
+
+  // KuszCanvas: the Markdown live preview canvas under the textarea draws
+  // the text; the textarea keeps its caret and a see-through selection
+  textarea.excalidraw-wysiwyg.excalidraw-wysiwyg--markdown-preview {
+    -webkit-text-fill-color: transparent;
+
+    &::selection {
+      background-color: color-mix(
+        in srgb,
+        var(--color-selection) 30%,
+        transparent
+      );
+    }
+  }
+
   &.excalidraw--non-interactive {
     user-select: none;
 

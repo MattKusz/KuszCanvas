@@ -48,6 +48,21 @@ export const isBlackboardModeEnabled = (): boolean =>
 export const isMarkdownTextRenderingEnabled = (): boolean =>
   getObsidianCommonHost()?.isMarkdownTextRenderingEnabled() === true;
 
+/** KuszCanvas: tag colour when no host supplies an accent (Obsidian's default purple). */
+export const DEFAULT_MARKDOWN_ACCENT_COLOR = "#8a5cf5";
+
+/**
+ * KuszCanvas: colour of Markdown tags in text elements. Uses the host's
+ * accent colour; outside Obsidian, or for a blank/non-string value, the
+ * default accent.
+ */
+export const getMarkdownAccentColor = (): string => {
+  const color = getObsidianCommonHost()?.getAccentColor();
+  return typeof color === "string" && color.trim() !== ""
+    ? color.trim()
+    : DEFAULT_MARKDOWN_ACCENT_COLOR;
+};
+
 export function getHighlightColor(
   sceneBgColor: string,
   opacity: number = 1,

@@ -13,6 +13,8 @@ import {
   getObsidianDeviceInfo,
   isBlackboardModeEnabled,
   isMarkdownTextRenderingEnabled,
+  getMarkdownAccentColor,
+  DEFAULT_MARKDOWN_ACCENT_COLOR,
   getPreferredUIMode,
   getWidthHeightLimit,
 } from "./commonObsidianUtils";
@@ -47,6 +49,7 @@ const createFakeHost = (
     `rgba(0,118,255,${opacity})`,
   isBlackboardModeEnabled: () => false,
   isMarkdownTextRenderingEnabled: () => false,
+  getAccentColor: () => "#8a5cf5",
 });
 
 describe("Obsidian common host registry", () => {
@@ -79,10 +82,32 @@ describe("Obsidian common host registry", () => {
     expect(getHighlightColor("#ffffff", 0.5)).toBe("rgba(0,118,255,0.5)");
     expect(isBlackboardModeEnabled()).toBe(false);
     expect(isMarkdownTextRenderingEnabled()).toBe(false);
+    expect(getMarkdownAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
   });
 
-  it("uses protocol 2 for the KuszCanvas render flags", () => {
-    expect(OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION).toBe(2);
+  it("uses protocol 3 for the KuszCanvas accent colour", () => {
+    expect(OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION).toBe(3);
+  });
+
+  it("reads the accent colour live from the host", () => {
+    let accent = "#ff0000";
+    configure({ ...createFakeHost(123), getAccentColor: () => accent });
+    expect(getMarkdownAccentColor()).toBe("#ff0000");
+    accent = "rgb(1, 2, 3)";
+    expect(getMarkdownAccentColor()).toBe("rgb(1, 2, 3)");
+  });
+
+  it("falls back to the default accent for a blank or non-string colour", () => {
+    configure({
+      ...createFakeHost(123),
+      getAccentColor: () => "  ",
+    });
+    expect(getMarkdownAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
+    configure({
+      ...createFakeHost(123),
+      getAccentColor: () => 42,
+    } as unknown as ObsidianCommonHostAdapter);
+    expect(getMarkdownAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
   });
 
   it("reads the render flags live on every call", () => {

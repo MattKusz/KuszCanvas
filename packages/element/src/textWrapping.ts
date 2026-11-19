@@ -1,5 +1,14 @@
 import { isDevEnv, isTestEnv } from "@excalidraw/common";
 
+// KuszCanvas START -- Markdown text
+import {
+  hasMarkdownSyntax,
+  isPlainMarkdown,
+  parseMarkdownText,
+} from "./markdownText";
+import { wrapMarkdownText } from "./markdownTextLayout";
+import { isMarkdownTextLayoutActive } from "./markdownTextMode";
+// KuszCanvas END
 import { charWidth, getLineWidth } from "./textMeasurements";
 
 import type { RenderEnvironment } from "./renderEnvironment";
@@ -456,6 +465,17 @@ export const getWrappedTextLines = (
   // in an infinite loop
   if (!Number.isFinite(maxWidth) || maxWidth < 0) {
     return getHardLineBreaks(text);
+  }
+
+  // KuszCanvas: wrap by rendered Markdown width when it differs from raw
+  if (
+    isMarkdownTextLayoutActive() &&
+    hasMarkdownSyntax(text) &&
+    !isPlainMarkdown(parseMarkdownText(text))
+  ) {
+    return wrapMarkdownText(text, font, maxWidth, (line, lineFont) =>
+      getLineWidth(line, lineFont, env),
+    );
   }
 
   const lines: WrappedTextLine[] = [];

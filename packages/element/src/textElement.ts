@@ -111,6 +111,7 @@ export const redrawTextBoundingBox = (
     getFontString(textElement),
     textElement.lineHeight,
     renderEnvironment,
+    textElement.originalText, // KuszCanvas: resolves wrapped Markdown lines
   );
 
   // Note: only update width for unwrapped text and bound texts (which always have autoResize set to true)
@@ -215,6 +216,7 @@ export const handleBindTextResize = (
         getFontString(textElement),
         textElement.lineHeight,
         renderEnvironment,
+        textElement.originalText, // KuszCanvas
       );
       nextHeight = metrics.height;
       nextWidth = metrics.width;

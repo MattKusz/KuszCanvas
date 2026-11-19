@@ -41,6 +41,7 @@ import { getLineWidth } from "@excalidraw/element";
 import { normalizeText } from "@excalidraw/element";
 import { wrapText } from "@excalidraw/element";
 import { getWrappedTextLines } from "@excalidraw/element";
+import { withRawTextLayout } from "@excalidraw/element"; // KuszCanvas
 import {
   isArrowElement,
   isBoundToContainer,
@@ -73,11 +74,19 @@ import {
   actionZoomOut,
 } from "../actions/actionCanvas";
 
+// KuszCanvas -- Markdown shortcuts and live preview
+import {
+  applyMarkdownShortcut,
+  createMarkdownLivePreview,
+} from "./textWysiwyg.markdown";
+
 import type { ParsedDataTranferList } from "../clipboard";
 
 import type App from "../components/App";
 import type { AppState } from "../types";
 import { attachInlineLinkSuggester } from "../obsidianUtils";
+
+import type { MarkdownLivePreview } from "./textWysiwyg.markdown";
 
 /**
  * How much further than the browser's caret reveal the canvas pans, in
@@ -334,6 +343,8 @@ export const textWysiwyg = ({
   };
 
   let LAST_THEME = app.state.theme;
+  // KuszCanvas: created once the textarea is attached (see the end)
+  let markdownPreview: MarkdownLivePreview | null = null;
 
   const updateWysiwygStyle = () => {
     LAST_THEME = app.state.theme;
@@ -536,6 +547,7 @@ export const textWysiwyg = ({
       }
 
       app.scene.mutateElement(updatedTextElement, { x: coordX, y: coordY });
+      markdownPreview?.update(); // KuszCanvas
     }
   };
 
@@ -596,11 +608,14 @@ export const textWysiwyg = ({
     );
     const localX = unrotatedX - layout.x;
     const localY = unrotatedY - layout.y;
-    const lines = getWrappedTextLines(
-      editable.value,
-      layout.font,
-      whiteSpace === "pre-wrap" ? layout.width : Infinity,
-      app.renderEnvironment,
+    // KuszCanvas: the textarea holds raw Markdown, so map it as raw text
+    const lines = withRawTextLayout(() =>
+      getWrappedTextLines(
+        editable.value,
+        layout.font,
+        whiteSpace === "pre-wrap" ? layout.width : Infinity,
+        app.renderEnvironment,
+      ),
     );
     const lineIndex = Math.max(
       0,
@@ -651,10 +666,13 @@ export const textWysiwyg = ({
       editable.selectionDirection === "backward"
         ? editable.selectionStart
         : editable.selectionEnd;
-    const lines = getWrappedTextLines(
-      value,
-      layout.font,
-      editable.style.whiteSpace === "pre-wrap" ? layout.width : Infinity,
+    // KuszCanvas: the textarea holds raw Markdown, so map it as raw text
+    const lines = withRawTextLayout(() =>
+      getWrappedTextLines(
+        value,
+        layout.font,
+        editable.style.whiteSpace === "pre-wrap" ? layout.width : Infinity,
+      ),
     );
     // the last line starting at or before it: at a soft break, the caret
     // shows at the start of the next line
@@ -846,11 +864,9 @@ export const textWysiwyg = ({
         const { selectionStart, selectionEnd, value } = editable;
         const nextText =
           value.slice(0, selectionStart) + text + value.slice(selectionEnd);
-        const wrappedText = wrapText(
-          nextText,
-          font,
-          maxWidth,
-          app.renderEnvironment,
+        // KuszCanvas: the textarea holds raw Markdown, so wrap it as raw text
+        const wrappedText = withRawTextLayout(() =>
+          wrapText(nextText, font, maxWidth, app.renderEnvironment),
         );
         const width = Math.min(
           getTextWidth(wrappedText, font, app.renderEnvironment),
@@ -878,6 +894,9 @@ export const textWysiwyg = ({
   }
 
   editable.onkeydown = (event) => {
+    if (applyMarkdownShortcut(event, editable)) {
+      return; // KuszCanvas: Ctrl/Cmd + B, I, U
+    }
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();
       app.actionManager.executeAction(actionZoomIn);
@@ -1123,6 +1142,8 @@ export const textWysiwyg = ({
     editorBox?.style.removeProperty("left");
     editorBox?.style.removeProperty("right");
 
+    markdownPreview?.destroy(); // KuszCanvas
+    markdownPreview = null;
     editable.remove();
   };
 
@@ -1346,6 +1367,12 @@ export const textWysiwyg = ({
   });
   ownerWindow.addEventListener("beforeunload", handleSubmit);
   editorBox!.appendChild(editable);
+  // KuszCanvas: Markdown live preview under the textarea
+  markdownPreview = createMarkdownLivePreview({
+    app,
+    editable,
+    elementId: element.id,
+  });
 
   return handleSubmit;
 };

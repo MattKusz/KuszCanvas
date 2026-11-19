@@ -25,7 +25,7 @@ import type { StaticCanvasRenderConfig } from "../scene/types";
  * regenerate the bitmap rather than keep serving the stale one.
  */
 describe("Obsidian render flags invalidate element bitmaps", () => {
-  const flags = { blackboard: false, markdown: false };
+  const flags = { blackboard: false, markdown: false, accent: "#8a5cf5" };
   let dispose: ObsidianCommonHostDisposer | null = null;
 
   const host: ObsidianCommonHostAdapter = {
@@ -40,11 +40,13 @@ describe("Obsidian render flags invalidate element bitmaps", () => {
     getHighlightColor: () => "#0076ff",
     isBlackboardModeEnabled: () => flags.blackboard,
     isMarkdownTextRenderingEnabled: () => flags.markdown,
+    getAccentColor: () => flags.accent,
   };
 
   beforeEach(() => {
     flags.blackboard = false;
     flags.markdown = false;
+    flags.accent = "#8a5cf5";
     dispose = configureObsidianCommonHost(host);
   });
 
@@ -121,5 +123,34 @@ describe("Obsidian render flags invalidate element bitmaps", () => {
 
     draw();
     expect(Element.elementWithCanvasCache.get(element)).toBe(second);
+  });
+
+  it("regenerates Markdown text when the accent colour changes", () => {
+    flags.markdown = true;
+    const element = API.createElement({ type: "text", text: "#tag" });
+    const draw = setup([element]);
+
+    draw();
+    const first = Element.elementWithCanvasCache.get(element);
+    expect(first).toBeDefined();
+
+    flags.accent = "#e83e8c";
+    draw();
+    const second = Element.elementWithCanvasCache.get(element);
+    expect(second).not.toBe(first);
+
+    draw();
+    expect(Element.elementWithCanvasCache.get(element)).toBe(second);
+  });
+
+  it("ignores the accent colour while Markdown rendering is off", () => {
+    const element = API.createElement({ type: "text", text: "#tag" });
+    const draw = setup([element]);
+
+    draw();
+    const first = Element.elementWithCanvasCache.get(element);
+    flags.accent = "#e83e8c";
+    draw();
+    expect(Element.elementWithCanvasCache.get(element)).toBe(first);
   });
 });
