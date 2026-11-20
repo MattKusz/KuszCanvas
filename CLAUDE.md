@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that builds the engine for the sibling `../KuszCanvas-Obsidian` plugin. Work on branch `kusch/whiteboard`.
+Work on branch `kusch/whiteboard`. This repo (a fork of zsviczian/excalidraw, itself a fork of excalidraw) builds the engine for the sibling `../KuszCanvas-Obsidian` plugin.
 
 ## Module map
 
@@ -24,6 +24,7 @@ KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that 
 - Renderer and host-adapter changes are an internal protocol with `../KuszCanvas-Obsidian`: bump the protocol version and update the consumer adapter in the same change. The consumer restates the number in three files listed in its `CLAUDE.md`.
 - Tests that configure the common host use `OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION`, never a literal, so a bump only fails tests of the old contract.
 - The consumer vendors `packages/excalidraw/dist/obsidian/` and `types/` with its `npm run vendor:excalidraw`, which refuses a dirty engine tree. Commit before vendoring; never copy artifacts by hand or publish to npm.
+- New engine exports reach the consumer's types only after vendoring: expect `tsc` errors for them in the consumer until then, and never edit its vendored types.
 
 ## Commands
 
@@ -40,6 +41,6 @@ KuszCanvas is a fork of zsviczian/excalidraw (itself a fork of excalidraw) that 
 - Never run `test:update` across the suite: about 1,500 tests fail at baseline (snapshot mismatches and `App` not mounting) and it would rewrite those snapshots. Update only snapshots you have inspected.
 - Don't rely on App-mounting tests (`h.elements` is undefined at baseline); test pure functions, or drive the harness with Playwright.
 - Regression check: compare sorted `FAIL` lines, not counts. Get the baseline from a clean worktree of HEAD outside the repo (`git worktree add --detach ../KuszCanvas-baseline HEAD`, then `corepack yarn install --frozen-lockfile --prefer-offline`), not `git stash`, which destroys work when other agents share the tree. Strip ANSI, `grep '^ FAIL '`, strip trailing `NNNms`, and sort both lists with `LC_ALL=C sort -u` before `comm`.
-- Flaky: `interactivity.test.tsx > programmatic viewport API still works` and the two `hostAbstraction.test.tsx > headless (server-side) export` tests, and `scrollConstraints.test.tsx > clears both active and pending locks with setViewport(null)`.
+- Flaky: `interactivity.test.tsx > programmatic viewport API still works` and the two `hostAbstraction.test.tsx > headless (server-side) export` tests, `scrollConstraints.test.tsx > clears both active and pending locks with setViewport(null)`, and the two `MermaidToExcalidrawLib.test.ts > host-provided Mermaid loading` tests when run alongside other component tests (rerun them alone).
 - When several agents share the working tree: no `git stash`/`reset`/`checkout --`/`clean`, one full-suite run at a time, and claim shared `App.tsx` regions in a coordination log under `.tmp/` before editing.
 - Scratch files go in `.tmp/` (ignored).
