@@ -388,6 +388,14 @@ const _renderStaticScene = ({
     viewBackgroundColor: isHighlighterPenDrawing
       ? "transparent"
       : appState.viewBackgroundColor, //zsviczian
+    // KuszCanvas: anchors the blackboard texture (scroll-snapped, like the
+    // elements)
+    view: {
+      scrollX: appState.scrollX,
+      scrollY: appState.scrollY,
+      zoom: appState.zoom.value,
+    },
+    environment: getRenderEnvironment(renderConfig.renderEnvironment),
   });
 
   // Apply zoom

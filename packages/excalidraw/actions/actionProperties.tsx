@@ -23,6 +23,7 @@ import {
   reduceToCommonValue,
   invariant,
   FONT_SIZES,
+  isBlackboardModeEnabled, // KuszCanvas
   type StrokeWidthKey,
 } from "@excalidraw/common";
 
@@ -30,6 +31,7 @@ import {
   canBecomePolygon,
   normalizeStickyNote,
   getNonDeletedElements,
+  shouldRememberTextAlign, // KuszCanvas
   isNonDeletedElement,
   syncStickyNoteInk,
 } from "@excalidraw/element";
@@ -183,6 +185,7 @@ import { getShortcutKey } from "../shortcut";
 
 import {
   getColorTargetAppStateUpdates,
+  getColorSwatchTheme, // KuszCanvas
   resolveColorTarget,
 } from "./colorTargets";
 import { register } from "./register";
@@ -464,6 +467,11 @@ export const actionChangeStrokeColor = register<
           palette={target.palette}
           customizableTopPicks={target.customizableTopPicks}
           excludedColors={target.excludedColors}
+          swatchTheme={getColorSwatchTheme(
+            target.kind,
+            appState.theme,
+            isBlackboardModeEnabled(),
+          )} // KuszCanvas
           type="elementStroke"
           label={label}
           color={getFormValue(
@@ -577,6 +585,11 @@ export const actionChangeBackgroundColor = register<
           palette={target.palette}
           customizableTopPicks={target.customizableTopPicks}
           excludedColors={target.excludedColors}
+          swatchTheme={getColorSwatchTheme(
+            target.kind,
+            appState.theme,
+            isBlackboardModeEnabled(),
+          )} // KuszCanvas
           type="elementBackground"
           label={t("labels.background")}
           color={getFormValue(
@@ -1832,6 +1845,23 @@ export const actionChangeTextAlign = register<TextAlign>({
   label: "Change text alignment",
   trackEvent: false,
   perform: (elements, appState, value, app) => {
+    // KuszCanvas: the texts the pick reaches (as `changeProperty` targets
+    // them) decide whether it becomes the default for new loose text
+    const selectedIds = new Set(
+      getSelectedElements(elements, appState, {
+        includeBoundTextElement: true,
+      }).map((element) => element.id),
+    );
+    const textTargets: ExcalidrawTextElement[] = [];
+    for (const element of elements) {
+      if (
+        isTextElement(element) &&
+        (selectedIds.has(element.id) ||
+          element.id === appState.editingTextElement?.id)
+      ) {
+        textTargets.push(element);
+      }
+    }
     return {
       elements: changeProperty(
         elements,
@@ -1857,7 +1887,10 @@ export const actionChangeTextAlign = register<TextAlign>({
       ),
       appState: {
         ...appState,
-        currentItemTextAlign: value,
+        // KuszCanvas: justifying labels only doesn't carry over to loose text
+        ...(shouldRememberTextAlign(textTargets) && {
+          currentItemTextAlign: value,
+        }),
       },
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     };

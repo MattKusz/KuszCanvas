@@ -18,6 +18,7 @@ import {
   computeBoundTextPosition,
   computeContainerDimensionForBoundText,
   getBoundTextElement,
+  getDefaultBoundTextAlign, // KuszCanvas
   normalizeStickyNoteFontSize,
   redrawTextBoundingBox,
   updateStickyNoteLayout,
@@ -228,8 +229,7 @@ export const bindTextToContainer = (
   const stickyInk = getStickyNoteInk(textElement, container);
   app.scene.mutateElement(textElement, {
     containerId: container.id,
-    verticalAlign: VERTICAL_ALIGN.MIDDLE,
-    textAlign: TEXT_ALIGN.CENTER,
+    ...getDefaultBoundTextAlign(container), // KuszCanvas -- sticky notes top-left
     autoResize: true,
     angle: (isArrowElement(container) ? 0 : container?.angle ?? 0) as Radians,
     link: null, // zsviczian -- container owns a bound label's link, PR #465

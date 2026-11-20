@@ -15,6 +15,7 @@ import {
   toBrandedType,
   applyDarkModeFilter,
   removeDarkModeFilter,
+  isBlackboardModeEnabled, // KuszCanvas -- blackboard board
 } from "@excalidraw/common";
 
 import { getCommonBounds, getElementAbsoluteCoords } from "@excalidraw/element";
@@ -28,6 +29,7 @@ import {
 } from "@excalidraw/element";
 
 import { newElementWith } from "@excalidraw/element";
+import { BLACKBOARD_BASE_COLOR, isBlackboardRender } from "@excalidraw/element"; // KuszCanvas
 
 import { isFrameLikeElement } from "@excalidraw/element";
 
@@ -65,6 +67,7 @@ import { Fonts } from "../fonts";
 
 import { renderStaticScene } from "../renderer/staticScene";
 import { renderSceneToSvg } from "../renderer/staticSvgScene";
+import { createBlackboardSvgFilter } from "../renderer/chalkSvg"; // KuszCanvas
 
 import {
   copyBlobToClipboardAsPng,
@@ -1162,10 +1165,22 @@ const exportToSvg = async ({
     rect.setAttribute("y", "0");
     rect.setAttribute("width", `${exportWidth / exportScale}`);
     rect.setAttribute("height", `${exportHeight / exportScale}`);
-    rect.setAttribute(
-      "fill",
-      applyDarkModeFilter(paintedBackgroundColor, exportWithDarkMode),
-    );
+    // KuszCanvas START -- blackboard mode paints the board
+    if (isBlackboardRender(theme, isBlackboardModeEnabled())) {
+      const filter = createBlackboardSvgFilter(
+        ownerDocument,
+        "kc-blackboard-texture",
+      );
+      defsElement.appendChild(filter);
+      rect.setAttribute("fill", BLACKBOARD_BASE_COLOR);
+      rect.setAttribute("filter", `url(#${filter.id})`);
+    } else {
+      rect.setAttribute(
+        "fill",
+        applyDarkModeFilter(paintedBackgroundColor, exportWithDarkMode),
+      );
+    }
+    // KuszCanvas END
     svgRoot.appendChild(rect);
   }
 

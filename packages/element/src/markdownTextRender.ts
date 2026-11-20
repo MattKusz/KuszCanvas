@@ -7,7 +7,10 @@
  * and text runs (pure); the canvas renderer and the SVG exporter each replay
  * those ops, so both outputs share one geometry.
  */
+import { getFontString, getVerticalOffset } from "@excalidraw/common";
+
 import { MARKDOWN_TEXT_METRICS } from "./markdownTextLayout";
+import { getLineHeightInPx } from "./textMeasurements";
 
 import type { MarkdownInlineStyle } from "./markdownText";
 import type {
@@ -15,7 +18,7 @@ import type {
   MarkdownTextLayout,
   MarkdownVisualLine,
 } from "./markdownTextLayout";
-import type { FontString } from "./types";
+import type { ExcalidrawTextElement, FontString } from "./types";
 
 /** Highlighter yellow; translucent so it reads on light and dark scenes. */
 export const MARKDOWN_HIGHLIGHT_COLOR = "rgba(255, 208, 0, 0.4)";
@@ -407,4 +410,56 @@ export const drawMarkdownText = (
   }
   context.restore();
   return ops.length > 0;
+};
+
+/**
+ * Draws a text element's lines as plain text, with the element's top-left at
+ * the origin and each line aligned within `width` (the element's width on
+ * the scene, the editor's box width in the live preview).
+ */
+export const drawPlainTextLines = (
+  context: CanvasRenderingContext2D,
+  element: Pick<
+    ExcalidrawTextElement,
+    "text" | "fontSize" | "lineHeight" | "fontFamily" | "textAlign"
+  >,
+  color: string,
+  width: number,
+): void => {
+  if (!context) {
+    throw new Error("drawPlainTextLines: context is required");
+  }
+  if (!element || typeof element.text !== "string") {
+    throw new Error("drawPlainTextLines: element with text is required");
+  }
+  if (typeof color !== "string" || !color) {
+    throw new Error("drawPlainTextLines: color is required");
+  }
+  if (!Number.isFinite(width)) {
+    throw new Error("drawPlainTextLines: width must be finite");
+  }
+  context.font = getFontString(element);
+  context.fillStyle = color;
+  context.textAlign = element.textAlign as CanvasTextAlign;
+  // canvas does not support multiline text
+  const lines = element.text.replace(/\r\n?/g, "\n").split("\n");
+  const horizontalOffset =
+    element.textAlign === "center"
+      ? width / 2
+      : element.textAlign === "right"
+      ? width
+      : 0;
+  const lineHeightPx = getLineHeightInPx(element.fontSize, element.lineHeight);
+  const verticalOffset = getVerticalOffset(
+    element.fontFamily,
+    element.fontSize,
+    lineHeightPx,
+  );
+  for (let index = 0; index < lines.length; index++) {
+    context.fillText(
+      lines[index],
+      horizontalOffset,
+      index * lineHeightPx + verticalOffset,
+    );
+  }
 };

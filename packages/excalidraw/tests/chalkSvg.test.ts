@@ -9,7 +9,11 @@ import {
   type ObsidianCommonHostAdapter,
   type ObsidianCommonHostDisposer,
 } from "@excalidraw/common";
-import { CHALK_LAYER_STRENGTH, getChalkJitter } from "@excalidraw/element";
+import {
+  BLACKBOARD_BASE_COLOR,
+  CHALK_LAYER_STRENGTH,
+  getChalkJitter,
+} from "@excalidraw/element";
 import { pointFrom, type LocalPoint } from "@excalidraw/math";
 
 import { exportToSvg } from "../obsidianExport";
@@ -116,7 +120,12 @@ describe("createChalkSvgFilter", () => {
 });
 
 describe("buildChalkSvgGroup", () => {
-  const options = { elementId: "el", seed: 9, bounds, jitter: true };
+  const options = {
+    elementId: "el",
+    seed: 9,
+    bounds,
+    jitter: true,
+  };
 
   it("stacks fill, stroke, solid with a filter on the chalked layers", () => {
     const fill = node();
@@ -292,5 +301,61 @@ describe("SVG export in blackboard mode", () => {
     );
     expect(filtersOf(svg, note.id)).toEqual([]);
     expect(filtersOf(svg, text.id)).toEqual([]);
+  });
+
+  it("paints the board: slate base with a texture filter", async () => {
+    const rect = API.createElement({ type: "rectangle", roughness: 0 });
+    const background = (svg: SVGSVGElement) =>
+      svg.querySelector(":scope > rect")!;
+    const svg = await exportOne(rect);
+    expect(background(svg).getAttribute("fill")).toBe(BLACKBOARD_BASE_COLOR);
+    const filterId = background(svg)
+      .getAttribute("filter")!
+      .match(/^url\(#(.+)\)$/)![1];
+    const filter = svg.querySelector(`filter#${filterId}`)!;
+    expect(filter.querySelectorAll("feTurbulence").length).toBeGreaterThan(1);
+
+    const light = background(await exportOne(rect, false));
+    expect(light.getAttribute("fill")).not.toBe(BLACKBOARD_BASE_COLOR);
+    expect(light.hasAttribute("filter")).toBe(false);
+    flags.blackboard = false;
+    expect(background(await exportOne(rect)).hasAttribute("filter")).toBe(
+      false,
+    );
+  });
+
+  it("keeps sticky notes and their labels in light-mode colours", async () => {
+    const note = API.createElement({
+      type: "stickynote",
+      backgroundColor: "#ffec99",
+      strokeColor: "#1e1e1e",
+    });
+    const text = API.createElement({
+      type: "text",
+      text: "note",
+      fontFamily: FONT_FAMILY.Excalifont,
+      strokeColor: "#1e1e1e",
+      containerId: note.id,
+    });
+    const boundNote = {
+      ...note,
+      boundElements: [{ id: text.id, type: "text" }],
+    };
+    const fillsOf = (svg: SVGSVGElement) =>
+      [note.id, text.id].map((id) =>
+        Array.from(svg.querySelectorAll(`[data-id="${id}"] [fill]`)).map(
+          (node) => node.getAttribute("fill"),
+        ),
+      );
+    const light = fillsOf(await exportOne(boundNote as any, false, [text]));
+    expect(light.flat().length).toBeGreaterThan(0);
+    expect(fillsOf(await exportOne(boundNote as any, true, [text]))).toEqual(
+      light,
+    );
+    // without blackboard mode, dark theme still inverts them
+    flags.blackboard = false;
+    expect(
+      fillsOf(await exportOne(boundNote as any, true, [text])),
+    ).not.toEqual(light);
   });
 });

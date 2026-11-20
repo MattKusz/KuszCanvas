@@ -65,11 +65,12 @@ import {
 } from "./textElement";
 import { getLineHeightInPx, getLineWidth } from "./textMeasurements"; // KuszCanvas: getLineWidth measures Markdown runs
 import { layoutMarkdownText } from "./markdownTextLayout"; // KuszCanvas
-import { drawMarkdownText } from "./markdownTextRender"; // KuszCanvas
+import { drawMarkdownText, drawPlainTextLines } from "./markdownTextRender"; // KuszCanvas
 import {
   getMarkdownOpChalkLayer,
   isBlackboardRender,
   isChalkElement,
+  isPaperRender,
   splitDrawableForChalk,
 } from "./blackboard"; // KuszCanvas -- blackboard mode
 import { drawChalked } from "./renderChalk"; // KuszCanvas -- blackboard mode
@@ -878,16 +879,8 @@ const drawElementOnCanvas = (
           );
           context.textAlign = element.textAlign as CanvasTextAlign;
 
-          // Canvas does not support multiline text by default
-          const lines = element.text.replace(/\r\n?/g, "\n").split("\n");
-
-          const horizontalOffset =
-            element.textAlign === "center"
-              ? element.width / 2
-              : element.textAlign === "right"
-              ? element.width
-              : 0;
-
+          // KuszCanvas: line splitting and alignment live in
+          // `drawPlainTextLines` (shared with the editor's live preview)
           const lineHeightPx = getLineHeightInPx(
             element.fontSize,
             element.lineHeight,
@@ -939,15 +932,17 @@ const drawElementOnCanvas = (
             return;
           }
           painted = true;
+          // shared with the editor's live preview
+          drawPlainTextLines(
+            context,
+            element,
+            applyDarkModeFilter(
+              element.strokeColor,
+              renderConfig.theme === THEME.DARK,
+            ),
+            element.width,
+          );
           // KuszCanvas END
-
-          for (let index = 0; index < lines.length; index++) {
-            context.fillText(
-              lines[index],
-              horizontalOffset,
-              index * lineHeightPx + verticalOffset,
-            );
-          }
         });
         if (shouldTemporarilyAttach) {
           context.canvas.remove();
@@ -1011,6 +1006,21 @@ const drawElementOnCanvasMaybeChalked = (
   renderConfig: StaticCanvasRenderConfig,
   localBounds: DeviceRect | null,
 ) => {
+  // sticky notes and their labels are paper: light-theme colours on the board
+  if (
+    isPaperRender(
+      element,
+      isTextElement(element) ? getContainerElement(element, elementsMap) : null,
+      renderConfig.theme,
+      isBlackboardModeEnabled(),
+    )
+  ) {
+    drawElementOnCanvas(element, rc, context, {
+      ...renderConfig,
+      theme: THEME.LIGHT,
+    });
+    return;
+  }
   if (!isChalkedRender(element, elementsMap, renderConfig)) {
     drawElementOnCanvas(element, rc, context, renderConfig);
     return;

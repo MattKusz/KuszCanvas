@@ -13,8 +13,6 @@ import {
 import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
-  TEXT_ALIGN,
-  VERTICAL_ALIGN,
   getSizeFromPoints,
   randomId,
   arrayToMap,
@@ -58,6 +56,7 @@ import {
   normalizeStickyNoteGeometry,
 } from "./newElement";
 import { normalizeStickyNoteStrokeColor } from "./stickyNote";
+import { getDefaultBoundTextAlign } from "./textAlignDefaults"; // KuszCanvas
 import { measureText, normalizeText } from "./textMeasurements";
 import {
   isArrowElement,
@@ -307,8 +306,7 @@ const bindTextToContainer = (
   const textElement: ExcalidrawTextElement = newTextElement({
     x: 0,
     y: 0,
-    textAlign: TEXT_ALIGN.CENTER,
-    verticalAlign: VERTICAL_ALIGN.MIDDLE,
+    ...getDefaultBoundTextAlign(container), // KuszCanvas -- sticky notes top-left
     ...textProps,
     rawText: textProps.text, //zsviczian
     containerId: container.id,

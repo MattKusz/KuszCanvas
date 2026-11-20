@@ -1,4 +1,16 @@
-import { COLOR_WHITE, THEME, applyDarkModeFilter } from "@excalidraw/common";
+import {
+  COLOR_WHITE,
+  THEME,
+  applyDarkModeFilter,
+  isBlackboardModeEnabled, // KuszCanvas -- blackboard board
+} from "@excalidraw/common";
+import { BLACKBOARD_BASE_COLOR, isBlackboardRender } from "@excalidraw/element"; // KuszCanvas
+
+import { paintBlackboardBackground } from "./blackboardBackground"; // KuszCanvas
+
+import type { RenderEnvironment } from "@excalidraw/element/renderEnvironment"; // KuszCanvas
+
+import type { BlackboardView } from "./blackboardBackground"; // KuszCanvas
 
 import type { StaticCanvasRenderConfig } from "../scene/types";
 import type { AppState, StaticCanvasAppState } from "../types";
@@ -79,6 +91,8 @@ export const bootstrapCanvas = ({
   theme,
   isExporting,
   viewBackgroundColor,
+  view,
+  environment,
 }: {
   canvas: HTMLCanvasElement;
   scale: number;
@@ -87,6 +101,10 @@ export const bootstrapCanvas = ({
   theme?: AppState["theme"];
   isExporting?: StaticCanvasRenderConfig["isExporting"];
   viewBackgroundColor?: StaticCanvasAppState["viewBackgroundColor"];
+  /** KuszCanvas: the scene view, to anchor the blackboard texture */
+  view?: BlackboardView;
+  /** KuszCanvas: creates the texture tile off-DOM */
+  environment?: RenderEnvironment;
 }): CanvasRenderingContext2D => {
   const context = canvas.getContext("2d")!;
 
@@ -108,17 +126,30 @@ export const bootstrapCanvas = ({
     }
 
     if (viewBackgroundColor !== "transparent") {
+      // KuszCanvas: blackboard mode paints the board, whatever the scene's
+      // own background
+      const blackboard =
+        (theme === THEME.DARK || theme === THEME.LIGHT) &&
+        isBlackboardRender(theme, isBlackboardModeEnabled());
       context.save();
       // The canvas silently ignores an invalid fillStyle, which would leave a
       // stale color from a previous draw. Seed a sane default so corrupted
       // values fall back to white instead of painting garbage.
       context.fillStyle = COLOR_WHITE;
-      context.fillStyle = applyDarkModeFilter(
-        viewBackgroundColor,
-        theme === THEME.DARK,
-      );
+      context.fillStyle = blackboard
+        ? BLACKBOARD_BASE_COLOR
+        : applyDarkModeFilter(viewBackgroundColor, theme === THEME.DARK);
       context.fillRect(0, 0, normalizedWidth, normalizedHeight);
       context.restore();
+      if (blackboard && view) {
+        paintBlackboardBackground(
+          context,
+          view,
+          normalizedWidth,
+          normalizedHeight,
+          environment,
+        );
+      }
     }
   } else {
     context.clearRect(0, 0, normalizedWidth, normalizedHeight);

@@ -12,6 +12,7 @@ import {
   applyDarkModeFilter,
   isRTL,
   hasRTLChars,
+  isBlackboardModeEnabled, // KuszCanvas -- blackboard paper
 } from "@excalidraw/common";
 import { pointFrom, pointRotateRads, type Radians } from "@excalidraw/math";
 
@@ -42,6 +43,7 @@ import { normalizeText } from "@excalidraw/element";
 import { wrapText } from "@excalidraw/element";
 import { getWrappedTextLines } from "@excalidraw/element";
 import { withRawTextLayout } from "@excalidraw/element"; // KuszCanvas
+import { isPaperRender } from "@excalidraw/element"; // KuszCanvas
 import {
   isArrowElement,
   isBoundToContainer,
@@ -77,7 +79,7 @@ import {
 // KuszCanvas -- Markdown shortcuts and live preview
 import {
   applyMarkdownShortcut,
-  createMarkdownLivePreview,
+  createLiveTextPreview,
 } from "./textWysiwyg.markdown";
 
 import type { ParsedDataTranferList } from "../clipboard";
@@ -86,7 +88,7 @@ import type App from "../components/App";
 import type { AppState } from "../types";
 import { attachInlineLinkSuggester } from "../obsidianUtils";
 
-import type { MarkdownLivePreview } from "./textWysiwyg.markdown";
+import type { LiveTextPreview } from "./textWysiwyg.markdown";
 
 /**
  * How much further than the browser's caret reveal the canvas pans, in
@@ -344,7 +346,7 @@ export const textWysiwyg = ({
 
   let LAST_THEME = app.state.theme;
   // KuszCanvas: created once the textarea is attached (see the end)
-  let markdownPreview: MarkdownLivePreview | null = null;
+  let liveTextPreview: LiveTextPreview | null = null;
 
   const updateWysiwygStyle = () => {
     LAST_THEME = app.state.theme;
@@ -480,6 +482,15 @@ export const textWysiwyg = ({
 
       const font = getFontString(updatedTextElement);
       const editorBoxLeft = updateEditorBoxInsets();
+      // KuszCanvas: a sticky note's label is paper, light ink in blackboard mode
+      const darkInk =
+        appState.theme === THEME.DARK &&
+        !isPaperRender(
+          updatedTextElement,
+          container,
+          appState.theme,
+          isBlackboardModeEnabled(),
+        );
 
       // a free text that stopped growing at the viewport's width (see
       // AppText.getMaxTextWidth) wraps from then on, and so does its editor
@@ -512,16 +523,13 @@ export const textWysiwyg = ({
         ),
         textAlign,
         verticalAlign,
-        color: applyDarkModeFilter(
-          updatedTextElement.strokeColor,
-          appState.theme === THEME.DARK,
-        ),
+        color: applyDarkModeFilter(updatedTextElement.strokeColor, darkInk),
         opacity: updatedTextElement.opacity / 100,
         // zsviczian START -- prevent Obsidian's independent theme from overriding the canvas caret color
         caretColor:
           updatedTextElement.strokeColor === "transparent"
             ? "var(--excalidraw-caret-color)"
-            : appState.theme === THEME.DARK
+            : darkInk // KuszCanvas: was appState.theme === THEME.DARK
             ? applyDarkModeFilter(updatedTextElement.strokeColor)
             : updatedTextElement.strokeColor,
         // zsviczian END
@@ -547,7 +555,7 @@ export const textWysiwyg = ({
       }
 
       app.scene.mutateElement(updatedTextElement, { x: coordX, y: coordY });
-      markdownPreview?.update(); // KuszCanvas
+      liveTextPreview?.update(); // KuszCanvas
     }
   };
 
@@ -1142,8 +1150,8 @@ export const textWysiwyg = ({
     editorBox?.style.removeProperty("left");
     editorBox?.style.removeProperty("right");
 
-    markdownPreview?.destroy(); // KuszCanvas
-    markdownPreview = null;
+    liveTextPreview?.destroy(); // KuszCanvas
+    liveTextPreview = null;
     editable.remove();
   };
 
@@ -1367,8 +1375,8 @@ export const textWysiwyg = ({
   });
   ownerWindow.addEventListener("beforeunload", handleSubmit);
   editorBox!.appendChild(editable);
-  // KuszCanvas: Markdown live preview under the textarea
-  markdownPreview = createMarkdownLivePreview({
+  // KuszCanvas: live text preview (Markdown, blackboard chalk) under the textarea
+  liveTextPreview = createLiveTextPreview({
     app,
     editable,
     elementId: element.id,

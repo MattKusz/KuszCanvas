@@ -5,7 +5,6 @@ import {
   TEXT_MAX_WRAP_WIDTH,
   TEXT_TO_CENTER_SNAP_THRESHOLD,
   TEXT_VIEWPORT_PADDING,
-  VERTICAL_ALIGN,
   getFontString,
   getLineHeight,
   sceneCoordsToViewportCoords,
@@ -33,6 +32,7 @@ import {
   isNonDeletedElement,
   isOpaqueForBinding,
   isStickyNoteElement,
+  getDefaultBoundTextAlign, // KuszCanvas
   isTextBindableContainer,
   isTextElement,
   isValidTextContainer,
@@ -897,6 +897,13 @@ export class AppText {
         ? topLayerFrame.id
         : null;
 
+    // KuszCanvas: a new label starts per its container (sticky notes
+    // top-left, shapes centre-centre); loose text follows the remembered pick
+    const containerTextAlign =
+      parentCenterPosition && container
+        ? getDefaultBoundTextAlign(container)
+        : null;
+
     const element =
       existingTextElement ||
       newTextElement({
@@ -923,14 +930,12 @@ export class AppText {
         fontFamily,
         textAlign:
           arrowEndpointBinding?.textAlign ??
-          (parentCenterPosition
-            ? "center"
-            : this.app.state.currentItemTextAlign),
+          containerTextAlign?.textAlign ??
+          this.app.state.currentItemTextAlign,
         verticalAlign:
           arrowEndpointBinding?.verticalAlign ??
-          (parentCenterPosition
-            ? VERTICAL_ALIGN.MIDDLE
-            : DEFAULT_VERTICAL_ALIGN),
+          containerTextAlign?.verticalAlign ??
+          DEFAULT_VERTICAL_ALIGN,
         containerId: shouldBindToContainer ? container?.id : undefined,
         labelPosition:
           shouldBindToContainer && container && isArrowElement(container)

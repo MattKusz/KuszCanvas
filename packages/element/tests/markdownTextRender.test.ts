@@ -1,7 +1,10 @@
+import { FONT_FAMILY, getVerticalOffset } from "@excalidraw/common";
+
 import { layoutMarkdownText } from "../src/markdownTextLayout";
 import {
   MARKDOWN_HIGHLIGHT_COLOR,
   drawMarkdownText,
+  drawPlainTextLines,
   getMarkdownPaintOps,
   type MarkdownDrawOptions,
 } from "../src/markdownTextRender";
@@ -260,6 +263,56 @@ describe("drawMarkdownText op filter", () => {
         "tableHeader",
         "tag",
       ].sort(),
+    );
+  });
+});
+
+describe("drawPlainTextLines", () => {
+  const element = {
+    text: "ab\r\ncd",
+    fontSize: 20,
+    lineHeight: 1.25 as any,
+    fontFamily: FONT_FAMILY.Excalifont,
+    textAlign: "center" as const,
+  };
+
+  it("draws one line per row, aligned within the width", () => {
+    const { context, calls } = createRecordingContext();
+    drawPlainTextLines(context, element, "#abcdef", 100);
+    const offset = getVerticalOffset(FONT_FAMILY.Excalifont, 20, 25);
+    expect(
+      calls
+        .filter((call) => call.op === "fillText")
+        .map((call) => [...call.args, call.fillStyle]),
+    ).toEqual([
+      ["ab", 50, offset, "#abcdef"],
+      ["cd", 50, 25 + offset, "#abcdef"],
+    ]);
+    expect(context.textAlign).toBe("center");
+    expect(context.font).toContain("20px");
+  });
+
+  it("anchors left and right alignment at the box edges", () => {
+    for (const [textAlign, x] of [
+      ["left", 0],
+      ["right", 80],
+    ] as const) {
+      const { context, calls } = createRecordingContext();
+      drawPlainTextLines(context, { ...element, textAlign }, "#000", 80);
+      expect(calls.find((call) => call.op === "fillText")!.args[1]).toBe(x);
+    }
+  });
+
+  it("validates its inputs", () => {
+    const { context } = createRecordingContext();
+    expect(() =>
+      drawPlainTextLines(null as any, element, "#000", 10),
+    ).toThrow();
+    expect(() =>
+      drawPlainTextLines(context, element, "#000", Number.NaN),
+    ).toThrow(/width/);
+    expect(() => drawPlainTextLines(context, element, "", 10)).toThrow(
+      /color/,
     );
   });
 });

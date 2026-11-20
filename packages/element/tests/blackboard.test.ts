@@ -1,6 +1,11 @@
 import { FONT_FAMILY, ROUGHNESS, THEME } from "@excalidraw/common";
 
 import {
+  BLACKBOARD_BASE_COLOR,
+  BLACKBOARD_PATTERN_SCALE,
+  BLACKBOARD_TILE_SIZE,
+  generateBlackboardTexture,
+  getBlackboardPatternTransform,
   CHALK_LAYER_STRENGTH,
   CHALK_TILE_SIZE,
   CHALK_TILE_SCENE_SIZE,
@@ -13,7 +18,9 @@ import {
   invertAffine,
   isBlackboardRender,
   isChalkElement,
+  isPaperRender,
   multiplyAffine,
+  shouldPaintLiveTextPreview,
   splitDrawableForChalk,
   transformRectToDeviceBounds,
 } from "../src/blackboard";
@@ -170,6 +177,56 @@ describe("isChalkElement", () => {
 
   it("rejects a missing element", () => {
     expect(() => isChalkElement(null as any, null)).toThrow(/element/);
+  });
+});
+
+describe("isPaperRender", () => {
+  const note = () => newStickyNoteElement({ type: "stickynote", ...BASE });
+
+  it("renders a sticky note as paper in blackboard mode", () => {
+    expect(isPaperRender(note(), null, THEME.DARK, true)).toBe(true);
+  });
+
+  it("renders a sticky note's label as paper", () => {
+    const container = note();
+    expect(
+      isPaperRender(
+        text(FONT_FAMILY.Excalifont, container.id),
+        container,
+        THEME.DARK,
+        true,
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves labels outside sticky notes and other elements alone", () => {
+    const solid = rect(ROUGHNESS.architect);
+    expect(
+      isPaperRender(
+        text(FONT_FAMILY.Nunito, solid.id),
+        solid,
+        THEME.DARK,
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isPaperRender(text(FONT_FAMILY.Nunito), null, THEME.DARK, true),
+    ).toBe(false);
+    expect(isPaperRender(solid, null, THEME.DARK, true)).toBe(false);
+  });
+
+  it("is off in light theme and with the flag off", () => {
+    expect(isPaperRender(note(), null, THEME.LIGHT, true)).toBe(false);
+    expect(isPaperRender(note(), null, THEME.DARK, false)).toBe(false);
+  });
+
+  it("rejects a missing element and an unknown theme", () => {
+    expect(() => isPaperRender(null as any, null, THEME.DARK, true)).toThrow(
+      /element/,
+    );
+    expect(() => isPaperRender(note(), null, "sepia" as any, true)).toThrow(
+      /theme/,
+    );
   });
 });
 
@@ -438,5 +495,212 @@ describe("getChalkGrainTransforms", () => {
     const a = getChalkGrainTransforms(identity, 1)[0].transform;
     const b = getChalkGrainTransforms(identity, 2)[0].transform;
     expect([a.e, a.f]).not.toEqual([b.e, b.f]);
+  });
+});
+
+describe("shouldPaintLiveTextPreview", () => {
+  const layout = { lines: [] } as any;
+
+  it("paints whenever there is a Markdown layout", () => {
+    expect(
+      shouldPaintLiveTextPreview({
+        markdownLayout: layout,
+        chalk: false,
+        wrapMatches: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("paints plain chalk text without Markdown, if the wrap is current", () => {
+    expect(
+      shouldPaintLiveTextPreview({
+        markdownLayout: null,
+        chalk: true,
+        wrapMatches: true,
+      }),
+    ).toBe(true);
+    // a stale wrap would misplace the glyphs: the editor shows its own
+    expect(
+      shouldPaintLiveTextPreview({
+        markdownLayout: null,
+        chalk: true,
+        wrapMatches: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves plain non-chalk text to the editor", () => {
+    expect(
+      shouldPaintLiveTextPreview({
+        markdownLayout: null,
+        chalk: false,
+        wrapMatches: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("validates its inputs", () => {
+    expect(() => shouldPaintLiveTextPreview(null as any)).toThrow();
+    expect(() =>
+      shouldPaintLiveTextPreview({
+        markdownLayout: null,
+        chalk: "yes" as any,
+        wrapMatches: true,
+      }),
+    ).toThrow(/chalk/);
+  });
+});
+
+describe("generateBlackboardTexture", () => {
+  const SIZE = 128;
+  /** signed lightness change per pixel: white adds, black subtracts */
+  const deltas = (rgba: Uint8ClampedArray) => {
+    const out = new Float32Array(rgba.length / 4);
+    for (let i = 0; i < out.length; i++) {
+      const alpha = rgba[i * 4 + 3] / 255;
+      out[i] = rgba[i * 4] === 255 ? alpha : -alpha;
+    }
+    return out;
+  };
+
+  it("is deterministic per seed, one RGBA pixel per texel", () => {
+    const texture = generateBlackboardTexture(SIZE, 4);
+    expect(texture.length).toBe(SIZE * SIZE * 4);
+    expect(texture).toEqual(generateBlackboardTexture(SIZE, 4));
+    expect(texture).not.toEqual(generateBlackboardTexture(SIZE, 5));
+  });
+
+  it("overlays only white or black, subtly", () => {
+    const texture = generateBlackboardTexture(SIZE, 1);
+    const values = deltas(texture);
+    for (let i = 0; i < values.length; i++) {
+      const [r, g, b] = [
+        texture[i * 4],
+        texture[i * 4 + 1],
+        texture[i * 4 + 2],
+      ];
+      expect(r === g && g === b && (r === 0 || r === 255)).toBe(true);
+    }
+    const max = Math.max(...values.map(Math.abs));
+    expect(max).toBeLessThanOrEqual(0.14);
+    const meanAbs =
+      values.reduce((sum, value) => sum + Math.abs(value), 0) / values.length;
+    expect(meanAbs).toBeLessThan(0.04);
+    // both lighter and darker mottling
+    expect(values.some((value) => value > 0.02)).toBe(true);
+    expect(values.some((value) => value < -0.02)).toBe(true);
+  });
+
+  it("has sparse light specks standing out from their neighbours", () => {
+    const values = deltas(generateBlackboardTexture(256, 2));
+    const size = 256;
+    let specks = 0;
+    for (let y = 1; y < size - 1; y++) {
+      for (let x = 1; x < size - 1; x++) {
+        const here = values[y * size + x];
+        const around =
+          (values[y * size + x - 1] +
+            values[y * size + x + 1] +
+            values[(y - 1) * size + x] +
+            values[(y + 1) * size + x]) /
+          4;
+        if (here - around > 0.015) {
+          specks++;
+        }
+      }
+    }
+    const share = specks / (size * size);
+    expect(share).toBeGreaterThan(0.0005);
+    expect(share).toBeLessThan(0.02);
+  });
+
+  it("tiles seamlessly in both directions", () => {
+    const values = deltas(generateBlackboardTexture(SIZE, 3));
+    const at = (x: number, y: number) =>
+      values[((y + SIZE) % SIZE) * SIZE + ((x + SIZE) % SIZE)];
+    const columnJump = (x: number) => {
+      let sum = 0;
+      for (let y = 0; y < SIZE; y++) {
+        sum += Math.abs(at(x, y) - at(x - 1, y));
+      }
+      return sum / SIZE;
+    };
+    const rowJump = (y: number) => {
+      let sum = 0;
+      for (let x = 0; x < SIZE; x++) {
+        sum += Math.abs(at(x, y) - at(x, y - 1));
+      }
+      return sum / SIZE;
+    };
+    let columns = 0;
+    let rows = 0;
+    for (let i = 1; i < SIZE; i++) {
+      columns += columnJump(i);
+      rows += rowJump(i);
+    }
+    expect(columnJump(0)).toBeLessThan((columns / (SIZE - 1)) * 1.5);
+    expect(rowJump(0)).toBeLessThan((rows / (SIZE - 1)) * 1.5);
+  });
+
+  it("rejects a non-power-of-two size and a non-finite seed", () => {
+    expect(() => generateBlackboardTexture(100, 1)).toThrow(/size/);
+    expect(() => generateBlackboardTexture(SIZE, Number.NaN)).toThrow(/seed/);
+  });
+});
+
+describe("getBlackboardPatternTransform", () => {
+  it("anchors the tile at the scene origin", () => {
+    const m = getBlackboardPatternTransform({
+      scrollX: 30,
+      scrollY: -12,
+      zoom: 1,
+    });
+    // scene (0, 0) sits at the scroll offset on screen
+    expect(m.e).toBeCloseTo(30);
+    expect(m.f).toBeCloseTo(-12);
+    expect(m.b).toBe(0);
+    expect(m.c).toBe(0);
+  });
+
+  it("scales with zoom and keeps the anchor in screen space", () => {
+    const one = getBlackboardPatternTransform({
+      scrollX: 0,
+      scrollY: 0,
+      zoom: 1,
+    });
+    const two = getBlackboardPatternTransform({
+      scrollX: 10,
+      scrollY: 20,
+      zoom: 1.5,
+    });
+    expect(two.a).toBeCloseTo(one.a * 1.5);
+    expect(two.e).toBeCloseTo(15);
+    expect(two.f).toBeCloseTo(30);
+  });
+
+  it("clamps the texel size at extreme zoom", () => {
+    const at = (zoom: number) =>
+      getBlackboardPatternTransform({ scrollX: 0, scrollY: 0, zoom }).a;
+    expect(at(30)).toBeCloseTo(BLACKBOARD_PATTERN_SCALE.max);
+    expect(at(0.05)).toBeCloseTo(BLACKBOARD_PATTERN_SCALE.min);
+    expect(at(30)).toBeCloseTo(at(60));
+  });
+
+  it("validates the view", () => {
+    expect(() =>
+      getBlackboardPatternTransform({ scrollX: 0, scrollY: 0, zoom: 0 }),
+    ).toThrow(/zoom/);
+    expect(() =>
+      getBlackboardPatternTransform({
+        scrollX: Number.NaN,
+        scrollY: 0,
+        zoom: 1,
+      }),
+    ).toThrow(/scroll/);
+  });
+
+  it("uses a slate-green base", () => {
+    expect(BLACKBOARD_BASE_COLOR).toMatch(/^#[0-9a-f]{6}$/);
+    expect(BLACKBOARD_TILE_SIZE).toBe(512);
   });
 });

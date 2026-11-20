@@ -6,12 +6,14 @@ import {
   DEFAULT_ELEMENT_STROKE_PICKS,
   STICKY_NOTE_BACKGROUND_PICKS,
   STICKY_NOTE_STROKE_PICKS,
+  THEME,
   arrayToMap,
 } from "@excalidraw/common";
 
 import {
   getColorTargetElement,
   hasBackground,
+  isBlackboardRender, // KuszCanvas
   hasStrokeColor,
   isStickyNoteBoundText,
   isStickyNoteElement,
@@ -22,7 +24,11 @@ import {
 } from "@excalidraw/element";
 
 import type { ColorPaletteCustom, ColorTuple } from "@excalidraw/common";
-import type { ElementsMap, ExcalidrawElement } from "@excalidraw/element/types";
+import type {
+  ElementsMap,
+  ExcalidrawElement,
+  Theme,
+} from "@excalidraw/element/types";
 
 import { getSelectedElements } from "../scene";
 
@@ -204,4 +210,30 @@ export const getColorTargetAppStateUpdates = (
         : color;
   }
   return updates;
+};
+
+const COLOR_TARGET_KINDS: readonly ColorTargetKind[] = [
+  "regular",
+  "sticky",
+  "mixed",
+];
+
+/**
+ * KuszCanvas: the theme the picker's swatches are drawn in. In blackboard
+ * mode a sticky note is paper and keeps its light-theme colours on the board
+ * (see `isPaperRender`), so its swatches skip the dark-mode filter too.
+ * Mixed selections keep the regular, dark-filtered swatches.
+ */
+export const getColorSwatchTheme = (
+  kind: ColorTargetKind,
+  theme: Theme,
+  blackboardEnabled: boolean,
+): Theme => {
+  if (!COLOR_TARGET_KINDS.includes(kind)) {
+    throw new Error(`getColorSwatchTheme(): unknown kind "${kind}"`);
+  }
+  // `isBlackboardRender` throws on an unknown theme
+  return kind === "sticky" && isBlackboardRender(theme, blackboardEnabled)
+    ? THEME.LIGHT
+    : theme;
 };

@@ -1,10 +1,30 @@
-import { COLOR_WHITE } from "@excalidraw/common";
+import {
+  COLOR_WHITE,
+  OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
+  configureObsidianCommonHost,
+  type ObsidianCommonHostAdapter,
+  type ObsidianCommonHostDisposer,
+} from "@excalidraw/common";
+import { BLACKBOARD_BASE_COLOR } from "@excalidraw/element";
 
 import {
   DEFAULT_SELECTION_COLOR,
   bootstrapCanvas,
   getSelectionColor,
 } from "./helpers";
+
+// KuszCanvas: the board shader needs WebGL2, which jsdom lacks
+const { paintBoardShader } = vi.hoisted(() => ({
+  paintBoardShader: vi.fn(
+    (
+      _context: CanvasRenderingContext2D,
+      _view: { scrollX: number; scrollY: number; zoom: number },
+      _width: number,
+      _height: number,
+    ) => true,
+  ),
+}));
+vi.mock("./blackboardShaderCanvas", () => ({ paintBoardShader }));
 
 const setup = () => {
   const canvas = document.createElement("canvas");
@@ -92,6 +112,102 @@ describe("bootstrapCanvas background painting", () => {
     expect(fillRect).not.toHaveBeenCalled();
   });
 });
+
+// KuszCanvas START -- blackboard board: slate base and scene-anchored texture
+describe("bootstrapCanvas in blackboard mode", () => {
+  const flags = { blackboard: true };
+  let dispose: ObsidianCommonHostDisposer | null = null;
+  const host: ObsidianCommonHostAdapter = {
+    protocolVersion: OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
+    getDeviceInfo: () => null,
+    getDesktopUIMode: () => "tray",
+    getPreferredUIMode: () => "tray",
+    getCanvasLimits: () => ({
+      areaLimit: 16_777_216,
+      widthHeightLimit: 32_767,
+    }),
+    getHighlightColor: () => "#0076ff",
+    isBlackboardModeEnabled: () => flags.blackboard,
+    isMarkdownTextRenderingEnabled: () => false,
+    getAccentColor: () => "#8a5cf5",
+  };
+
+  beforeEach(() => {
+    flags.blackboard = true;
+    paintBoardShader.mockClear();
+    dispose = configureObsidianCommonHost(host);
+  });
+  afterEach(() => {
+    dispose?.();
+    dispose = null;
+  });
+
+  const paint = (
+    theme: "light" | "dark",
+    viewBackgroundColor: string,
+    view?: { scrollX: number; scrollY: number; zoom: number },
+  ) => {
+    const { canvas, context } = setup();
+    const fills: unknown[] = [];
+    vi.spyOn(context, "fillRect").mockImplementation(() => {
+      fills.push(context.fillStyle);
+    });
+    bootstrapCanvas({
+      canvas,
+      scale: 1,
+      normalizedWidth: 200,
+      normalizedHeight: 100,
+      theme,
+      viewBackgroundColor,
+      view,
+    });
+    return fills;
+  };
+
+  it("paints the base, then the shader board over the whole view", () => {
+    const view = { scrollX: 3, scrollY: -4, zoom: 2 };
+    const fills = paint("dark", "#ffffff", view);
+    expect(fills.map((fill) => String(fill).toLowerCase())).toEqual([
+      BLACKBOARD_BASE_COLOR,
+    ]);
+    expect(paintBoardShader).toHaveBeenCalledTimes(1);
+    expect(paintBoardShader.mock.calls[0].slice(1)).toEqual([view, 200, 100]);
+  });
+
+  it("keeps the flat base where the shader cannot run", () => {
+    paintBoardShader.mockReturnValueOnce(false);
+    const fills = paint("dark", "#ffffff", { scrollX: 0, scrollY: 0, zoom: 1 });
+    expect(fills.map((fill) => String(fill).toLowerCase())).toEqual([
+      BLACKBOARD_BASE_COLOR,
+    ]);
+  });
+
+  it("paints the base alone without a view", () => {
+    const fills = paint("dark", "#ffffff");
+    expect(fills.map((fill) => String(fill).toLowerCase())).toEqual([
+      BLACKBOARD_BASE_COLOR,
+    ]);
+    expect(paintBoardShader).not.toHaveBeenCalled();
+  });
+
+  it("still clears for a transparent background", () => {
+    expect(
+      paint("dark", "transparent", { scrollX: 0, scrollY: 0, zoom: 1 }),
+    ).toEqual([]);
+    expect(paintBoardShader).not.toHaveBeenCalled();
+  });
+
+  it("leaves light theme and disabled mode alone", () => {
+    expect(
+      paint("light", "#ffffff", { scrollX: 0, scrollY: 0, zoom: 1 }).length,
+    ).toBe(1);
+    flags.blackboard = false;
+    const fills = paint("dark", "#ffffff", { scrollX: 0, scrollY: 0, zoom: 1 });
+    expect(fills.length).toBe(1);
+    expect(String(fills[0]).toLowerCase()).not.toBe(BLACKBOARD_BASE_COLOR);
+  });
+});
+// KuszCanvas END
 
 // zsviczian START -- selection colors must resolve in the owning popout window
 describe("getSelectionColor", () => {

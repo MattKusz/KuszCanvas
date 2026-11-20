@@ -46,6 +46,13 @@ const _renderNewElementScene = ({
       viewBackgroundColor: isHighlighterPenDrawing
         ? appState.viewBackgroundColor
         : "transparent", //zsviczian
+      // KuszCanvas: the highlighter pass paints the board here
+      view: {
+        scrollX: appState.scrollX,
+        scrollY: appState.scrollY,
+        zoom: appState.zoom.value,
+      },
+      environment: renderConfig.renderEnvironment,
     });
 
     context.save();

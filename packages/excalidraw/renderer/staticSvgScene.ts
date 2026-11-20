@@ -18,6 +18,7 @@ import {
   getFontString, // KuszCanvas -- Markdown text layout
   getMarkdownAccentColor, // KuszCanvas
   isMarkdownTextRenderingEnabled, // KuszCanvas
+  isBlackboardModeEnabled, // KuszCanvas -- blackboard paper
 } from "@excalidraw/common";
 import { normalizeLink, toValidURL } from "@excalidraw/common";
 import { hashString } from "@excalidraw/element";
@@ -68,6 +69,7 @@ import {
   getChalkLocalBounds,
   getMarkdownOpChalkLayer,
   isChalkedRender,
+  isPaperRender,
   splitDrawableForChalk,
 } from "@excalidraw/element";
 
@@ -92,7 +94,6 @@ import type { RenderableElementsMap, SVGRenderConfig } from "../scene/types";
 import type { AppState, BinaryFiles } from "../types";
 import type { Drawable } from "roughjs/bin/core";
 import type { RoughSVG } from "roughjs/bin/svg";
-
 
 const roughSVGDrawWithPrecision = (
   rsvg: RoughSVG,
@@ -153,6 +154,7 @@ const addRoughChalkNodes = (
   }
   return nodes;
 };
+
 // KuszCanvas END
 
 const maybeWrapNodesInFrameClipPath = (
@@ -192,6 +194,17 @@ const renderElementToSvg = (
   /** KuszCanvas: see `renderElement`'s `framePass` */
   framePass: FrameRenderPass = "full",
 ) => {
+  // KuszCanvas: sticky notes and their labels are paper in blackboard mode
+  if (
+    isPaperRender(
+      element,
+      isTextElement(element) ? getContainerElement(element, elementsMap) : null,
+      renderConfig.theme,
+      isBlackboardModeEnabled(),
+    )
+  ) {
+    renderConfig = { ...renderConfig, theme: THEME.LIGHT };
+  }
   const offset = { x: offsetX, y: offsetY };
   const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
   let cx = (x2 - x1) / 2 - (element.x - x1);
@@ -829,7 +842,8 @@ const renderElementToSvg = (
         isInitializedImageElement(element) && files[element.fileId];
       if (fileData) {
         const { reuseImages = true } = renderConfig;
-        let suffix = fileData.mimeType === "image/svg+xml" &&
+        let suffix =
+          fileData.mimeType === "image/svg+xml" &&
           element.customData?.doNotInvertSVGInDarkMode
             ? "-no-invert-svg"
             : element.customData?.invertBitmapInDarkmode
@@ -918,8 +932,10 @@ const renderElementToSvg = (
 
         if (
           renderConfig.theme === THEME.DARK &&
-          ((fileData.mimeType === MIME_TYPES.svg && !element.customData?.doNotInvertSVGInDarkMode) ||
-            (!!element.customData?.pdfPageViewProps && (element.customData?.invertBitmapInDarkmode ?? true)) ||
+          ((fileData.mimeType === MIME_TYPES.svg &&
+            !element.customData?.doNotInvertSVGInDarkMode) ||
+            (!!element.customData?.pdfPageViewProps &&
+              (element.customData?.invertBitmapInDarkmode ?? true)) ||
             !!element.customData?.invertBitmapInDarkmode) //zsviczian
         ) {
           g.setAttribute("filter", DARK_THEME_FILTER);
@@ -1046,8 +1062,10 @@ const renderElementToSvg = (
         framePass !== "fill" &&
         renderConfig.frameRendering.enabled &&
         renderConfig.frameRendering.outline &&
-        !(!renderConfig.frameRendering.markerEnabled &&
-          element.frameRole === "marker") //zsviczian
+        !(
+          !renderConfig.frameRendering.markerEnabled &&
+          element.frameRole === "marker"
+        ) //zsviczian
       ) {
         const rect = svgRoot.ownerDocument.createElementNS(SVG_NS, "rect");
 
@@ -1075,7 +1093,7 @@ const renderElementToSvg = (
             return applyDarkModeFilter(
               color, //zsviczian
               renderConfig.theme === THEME.DARK,
-            )
+            );
           })(),
         );
         // KuszCanvas: was filled from `frameColor.fill` (a colour) by mistake

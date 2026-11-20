@@ -60,6 +60,7 @@ export * from "./align";
 export * from "./arrowEndpointText";
 export * from "./binding";
 export * from "./blackboard"; // KuszCanvas
+export * from "./blackboardShader"; // KuszCanvas
 export * from "./bounds";
 export * from "./bucketFill";
 export * from "./collision";
@@ -95,6 +96,7 @@ export * from "./markdownTextShortcuts";
 export * from "./mutateElement";
 export * from "./newElement";
 export * from "./positionElementsOnGrid";
+export * from "./renderChalk"; // KuszCanvas
 export * from "./renderElement";
 export * from "./renderEnvironment";
 export * from "./resizeElements";
@@ -107,6 +109,7 @@ export * from "./sizeHelpers";
 export * from "./sortElements";
 export * from "./store";
 export * from "./stickyNote";
+export * from "./textAlignDefaults"; // KuszCanvas
 export * from "./textElement";
 export * from "./textMeasurements";
 export * from "./textWrapping";

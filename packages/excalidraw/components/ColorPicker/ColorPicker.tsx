@@ -67,6 +67,9 @@ interface ColorPickerProps {
    * from the picker popup onto it. The value names the
    * `appState.colorTopPicks` slot the customization is stored in */
   customizableTopPicks?: keyof AppState["colorTopPicks"];
+  /** KuszCanvas: theme the swatches are drawn in, when it differs from the
+   * UI theme (sticky notes in blackboard mode stay light) */
+  swatchTheme?: Theme;
 }
 
 const ColorPickerPopupContent = ({
@@ -81,6 +84,7 @@ const ColorPickerPopupContent = ({
   appState,
   excludedColors,
   onResetTopPicks,
+  swatchTheme,
 }: Pick<
   ColorPickerProps,
   | "type"
@@ -92,6 +96,7 @@ const ColorPickerPopupContent = ({
   | "updateData"
   | "appState"
   | "excludedColors"
+  | "swatchTheme"
 > & {
   getOpenPopup: () => AppState["openPopup"];
   /** present only while the top picks are customized */
@@ -199,7 +204,7 @@ const ColorPickerPopupContent = ({
           excludedColors={excludedColors}
           onResetTopPicks={onResetTopPicks}
           color={color}
-          theme={appState.theme}
+          theme={swatchTheme ?? appState.theme} // KuszCanvas
           onChange={(changedColor) => {
             // Save caret position before color change if editing text
             const savedSelection = appState.editingTextElement
@@ -359,7 +364,9 @@ const ColorPickerComponent = ({
   appState,
   excludedColors,
   customizableTopPicks,
+  swatchTheme: swatchThemeProp,
 }: ColorPickerProps) => {
+  const swatchTheme = swatchThemeProp ?? appState.theme; // KuszCanvas
   const openRef = useRef(appState.openPopup);
   useEffect(() => {
     openRef.current = appState.openPopup;
@@ -425,7 +432,7 @@ const ColorPickerComponent = ({
       >
         {!isCompactMode && (
           <TopPicks
-            theme={appState.theme}
+            theme={swatchTheme} // KuszCanvas
             activeColor={color}
             onChange={(pickedColor) => {
               onChange(pickedColor);
@@ -461,7 +468,7 @@ const ColorPickerComponent = ({
             color={color}
             label={label}
             type={type}
-            theme={appState.theme}
+            theme={swatchTheme} // KuszCanvas
             mode={type === "elementStroke" ? "stroke" : "background"}
             editingTextElement={!!appState.editingTextElement}
             onToggle={() => {
@@ -487,6 +494,7 @@ const ColorPickerComponent = ({
               elements={elements}
               palette={palette}
               excludedColors={excludedColors}
+              swatchTheme={swatchTheme} // KuszCanvas
               updateData={updateData}
               getOpenPopup={() => openRef.current}
               appState={appState}
@@ -538,6 +546,7 @@ const areColorPickerPropsEqual = (
     prev.excludedColors === next.excludedColors &&
     prev.customizableTopPicks === next.customizableTopPicks &&
     prev.appState.theme === next.appState.theme &&
+    prev.swatchTheme === next.swatchTheme && // KuszCanvas
     prev.appState.colorTopPicks === next.appState.colorTopPicks &&
     // the trigger tweaks its click behavior while a text element is edited
     !!prev.appState.editingTextElement === !!next.appState.editingTextElement

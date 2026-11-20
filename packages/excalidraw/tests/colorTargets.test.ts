@@ -4,9 +4,11 @@ import {
   DEFAULT_STICKY_NOTE_BG,
   STICKY_NOTE_BACKGROUND_PICKS,
   STICKY_NOTE_STROKE_PICKS,
+  THEME,
 } from "@excalidraw/common";
 
 import {
+  getColorSwatchTheme,
   getColorTargetAppStateUpdates,
   resolveColorTarget,
 } from "../actions/colorTargets";
@@ -198,5 +200,29 @@ describe("resolveColorTarget", () => {
     expect(
       getColorTargetAppStateUpdates(regular, COLOR_PALETTE.transparent),
     ).toEqual({ currentItemBackgroundColor: COLOR_PALETTE.transparent });
+  });
+});
+
+// KuszCanvas: a note is paper on the blackboard, so its swatches show the
+// light-theme colours it is painted with
+describe("getColorSwatchTheme", () => {
+  it("shows sticky swatches in light colours in blackboard mode", () => {
+    expect(getColorSwatchTheme("sticky", THEME.DARK, true)).toBe(THEME.LIGHT);
+  });
+
+  it("keeps the UI theme for everything else", () => {
+    expect(getColorSwatchTheme("sticky", THEME.DARK, false)).toBe(THEME.DARK);
+    expect(getColorSwatchTheme("sticky", THEME.LIGHT, true)).toBe(THEME.LIGHT);
+    expect(getColorSwatchTheme("regular", THEME.DARK, true)).toBe(THEME.DARK);
+    expect(getColorSwatchTheme("mixed", THEME.DARK, true)).toBe(THEME.DARK);
+  });
+
+  it("rejects unknown inputs", () => {
+    expect(() => getColorSwatchTheme("other" as any, THEME.DARK, true)).toThrow(
+      /kind/,
+    );
+    expect(() => getColorSwatchTheme("sticky", "dim" as any, true)).toThrow(
+      /theme/,
+    );
   });
 });
