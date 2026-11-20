@@ -71,6 +71,7 @@ describe("appendMarkdownPaintOpsToSvg", () => {
     const parent = render([
       {
         kind: "rect",
+        role: "tag",
         x: 1,
         y: 2,
         width: 3,

@@ -55,9 +55,20 @@ export type MarkdownDrawOptions = Readonly<{
   accentColor: string;
 }>;
 
+/** KuszCanvas: what a Markdown rect paints, so blackboard mode can layer it. */
+export type MarkdownRectRole =
+  | "highlight"
+  | "code"
+  | "tag"
+  | "tableHeader"
+  | "tableGrid"
+  | "quote"
+  | "decoration";
+
 export type MarkdownPaintOp = Readonly<
   | {
       kind: "rect";
+      role: MarkdownRectRole;
       x: number;
       y: number;
       width: number;
@@ -138,6 +149,7 @@ const pushTableGrid = (
     options.fontSize * MARKDOWN_DECORATION.thickness,
   );
   const rect = (
+    role: MarkdownRectRole,
     x: number,
     y: number,
     width: number,
@@ -146,6 +158,7 @@ const pushTableGrid = (
   ) =>
     ops.push({
       kind: "rect",
+      role,
       x,
       y,
       width,
@@ -158,6 +171,7 @@ const pushTableGrid = (
   if (rowHeight > 0) {
     if (table.isHeader) {
       rect(
+        "tableHeader",
         lineX,
         rowTop,
         table.width,
@@ -165,14 +179,28 @@ const pushTableGrid = (
         MARKDOWN_MARK_ALPHA.tableHeader,
       );
     }
-    rect(lineX, rowTop, table.width, thickness, grid);
+    rect("tableGrid", lineX, rowTop, table.width, thickness, grid);
     for (const columnX of table.columnXs) {
-      rect(lineX + columnX, rowTop, thickness, rowHeight, grid);
+      rect("tableGrid", lineX + columnX, rowTop, thickness, rowHeight, grid);
     }
-    rect(lineX + table.width - thickness, rowTop, thickness, rowHeight, grid);
+    rect(
+      "tableGrid",
+      lineX + table.width - thickness,
+      rowTop,
+      thickness,
+      rowHeight,
+      grid,
+    );
   }
   if (table.isLastRow) {
-    rect(lineX, rowTop + rowHeight - thickness, table.width, thickness, grid);
+    rect(
+      "tableGrid",
+      lineX,
+      rowTop + rowHeight - thickness,
+      table.width,
+      thickness,
+      grid,
+    );
   }
 };
 
@@ -194,6 +222,7 @@ const pushSegment = (
   if (style.highlight) {
     ops.push({
       kind: "rect",
+      role: "highlight",
       x,
       y: boxTop,
       width: segment.width,
@@ -206,6 +235,7 @@ const pushSegment = (
   if (style.code) {
     ops.push({
       kind: "rect",
+      role: "code",
       x,
       y: boxTop,
       width: segment.width,
@@ -218,6 +248,7 @@ const pushSegment = (
   if (style.tag) {
     ops.push({
       kind: "rect",
+      role: "tag",
       x,
       y: boxTop,
       width: segment.width,
@@ -244,6 +275,7 @@ const pushSegment = (
   const decoration = (y: number) =>
     ops.push({
       kind: "rect",
+      role: "decoration",
       x: textX,
       y,
       width: segment.textWidth,
@@ -294,6 +326,7 @@ export const getMarkdownPaintOps = (
     for (const barX of line.quoteBars) {
       ops.push({
         kind: "rect",
+        role: "quote",
         x: lineX + barX,
         y: rowTop,
         width: fontSize * MARKDOWN_TEXT_METRICS.quoteBarWidth,
@@ -329,15 +362,25 @@ export const getMarkdownPaintOps = (
   return ops;
 };
 
-/** Draws `options.layout` on a canvas, with the element's top-left at the origin. */
+/**
+ * Draws `options.layout` on a canvas, with the element's top-left at the
+ * origin. `include` limits the ops drawn (blackboard mode paints one chalk
+ * layer at a time). Returns whether any op was drawn.
+ */
 export const drawMarkdownText = (
   context: CanvasRenderingContext2D,
   options: MarkdownDrawOptions,
-): void => {
+  include?: (op: MarkdownPaintOp) => boolean,
+): boolean => {
   if (!context) {
     throw new Error("drawMarkdownText: context is required");
   }
-  const ops = getMarkdownPaintOps(options);
+  if (include !== undefined && typeof include !== "function") {
+    throw new Error("drawMarkdownText: include must be a function");
+  }
+  const ops = include
+    ? getMarkdownPaintOps(options).filter(include)
+    : getMarkdownPaintOps(options);
   context.save();
   context.textAlign = "left";
   const baseAlpha = context.globalAlpha;
@@ -363,4 +406,5 @@ export const drawMarkdownText = (
     }
   }
   context.restore();
+  return ops.length > 0;
 };

@@ -188,3 +188,78 @@ describe("getMarkdownPaintOps", () => {
     );
   });
 });
+
+// KuszCanvas: blackboard mode paints Markdown one chalk layer at a time
+describe("drawMarkdownText op filter", () => {
+  const drawFiltered = (
+    text: string,
+    include: (op: ReturnType<typeof getMarkdownPaintOps>[number]) => boolean,
+  ) => {
+    const layout = layoutMarkdownText(text, FONT, measure)!;
+    const { context, calls } = createRecordingContext();
+    const painted = drawMarkdownText(
+      context,
+      {
+        layout,
+        font: FONT,
+        width: layout.width,
+        textAlign: "left",
+        fontSize: 20,
+        lineHeightPx: 25,
+        verticalOffset: 18,
+        color: "#1e1e1e",
+        accentColor: "#e83e8c",
+      },
+      include,
+    );
+    return { calls, painted };
+  };
+
+  it("draws only the ops the filter keeps", () => {
+    const { calls, painted } = drawFiltered(
+      "a `b` ==c==",
+      (op) => op.kind === "text" && op.style.code,
+    );
+    expect(texts(calls)).toEqual(["b"]);
+    expect(painted).toBe(true);
+  });
+
+  it("reports when nothing was painted", () => {
+    const { calls, painted } = drawFiltered("**bold**", () => false);
+    expect(calls.filter((call) => call.op === "fillText")).toEqual([]);
+    expect(painted).toBe(false);
+  });
+
+  it("tags every rect with its role", () => {
+    const layout = layoutMarkdownText(
+      "> ==h== `c` #tag ~~s~~\n\n| a |\n| - |\n| b |",
+      FONT,
+      measure,
+    )!;
+    const ops = getMarkdownPaintOps({
+      layout,
+      font: FONT,
+      width: layout.width,
+      textAlign: "left",
+      fontSize: 20,
+      lineHeightPx: 25,
+      verticalOffset: 18,
+      color: "#1e1e1e",
+      accentColor: "#e83e8c",
+    });
+    const roles = new Set(
+      ops.flatMap((op) => (op.kind === "rect" ? [op.role] : [])),
+    );
+    expect([...roles].sort()).toEqual(
+      [
+        "code",
+        "decoration",
+        "highlight",
+        "quote",
+        "tableGrid",
+        "tableHeader",
+        "tag",
+      ].sort(),
+    );
+  });
+});

@@ -63,6 +63,16 @@ import {
 } from "@excalidraw/element";
 
 import { getElementAbsoluteCoords } from "@excalidraw/element";
+// KuszCanvas START -- blackboard chalk
+import {
+  getChalkLocalBounds,
+  getMarkdownOpChalkLayer,
+  isChalkedRender,
+  splitDrawableForChalk,
+} from "@excalidraw/element";
+
+import type { ChalkLayer } from "@excalidraw/element";
+// KuszCanvas END
 
 import type { FrameRenderPass } from "@excalidraw/element";
 import type {
@@ -74,6 +84,9 @@ import type {
 import { getFreeDrawSvgPath } from "../../element/src/freedrawPath";
 
 import { appendMarkdownPaintOpsToSvg } from "./markdownTextSvg"; // KuszCanvas
+import { buildChalkSvgGroup } from "./chalkSvg"; // KuszCanvas
+
+import type { ChalkSvgGroupOptions } from "./chalkSvg"; // KuszCanvas
 
 import type { RenderableElementsMap, SVGRenderConfig } from "../scene/types";
 import type { AppState, BinaryFiles } from "../types";
@@ -96,6 +109,51 @@ const roughSVGDrawWithPrecision = (
   };
   return rsvg.draw(pshape);
 };
+
+// KuszCanvas START -- blackboard chalk
+type ChalkSvgLayers = Record<ChalkLayer, SVGElement[]>;
+
+const createChalkSvgLayers = (): ChalkSvgLayers => ({
+  fill: [],
+  stroke: [],
+  solid: [],
+});
+
+/**
+ * Draws a rough drawable into chalk layers: its fill sets to `fill`, its
+ * outline sets to `stroke`, or all of it to `whole` (arrowheads).
+ */
+const addRoughChalkNodes = (
+  rsvg: RoughSVG,
+  drawable: Drawable,
+  layers: ChalkSvgLayers,
+  whole: "stroke" | null = null,
+): SVGElement[] => {
+  if (whole) {
+    const node = roughSVGDrawWithPrecision(
+      rsvg,
+      drawable,
+      MAX_DECIMALS_FOR_SVG_EXPORT,
+    );
+    layers[whole].push(node);
+    return [node];
+  }
+  const nodes: SVGElement[] = [];
+  for (const layer of ["fill", "stroke"] as const) {
+    const part = splitDrawableForChalk(drawable, layer);
+    if (part) {
+      const node = roughSVGDrawWithPrecision(
+        rsvg,
+        part,
+        MAX_DECIMALS_FOR_SVG_EXPORT,
+      );
+      layers[layer].push(node);
+      nodes.push(node);
+    }
+  }
+  return nodes;
+};
+// KuszCanvas END
 
 const maybeWrapNodesInFrameClipPath = (
   element: Readonly<NonDeletedExcalidrawElement>,
@@ -178,6 +236,20 @@ const renderElementToSvg = (
     ((getContainingFrame(element, elementsMap)?.opacity ?? 100) *
       element.opacity) /
     10000;
+
+  // KuszCanvas: blackboard chalk, in the element's local units
+  const chalk: ChalkSvgGroupOptions | null = isChalkedRender(
+    element,
+    elementsMap,
+    renderConfig,
+  )
+    ? {
+        elementId: element.id,
+        seed: element.seed,
+        bounds: getChalkLocalBounds(element, elementsMap),
+        jitter: !isTextElement(element),
+      }
+    : null;
 
   switch (element.type) {
     case "selection": {
@@ -349,11 +421,14 @@ const renderElementToSvg = (
     case "diamond":
     case "ellipse": {
       const shape = ShapeCache.generateElementShape(element, renderConfig);
-      const node = roughSVGDrawWithPrecision(
-        rsvg,
-        shape,
-        MAX_DECIMALS_FOR_SVG_EXPORT,
-      );
+      // KuszCanvas: chalked shapes draw fill and outline as separate layers
+      const node: SVGElement = chalk
+        ? (() => {
+            const layers = createChalkSvgLayers();
+            addRoughChalkNodes(rsvg, shape, layers);
+            return buildChalkSvgGroup(svgRoot.ownerDocument, chalk, layers);
+          })()
+        : roughSVGDrawWithPrecision(rsvg, shape, MAX_DECIMALS_FOR_SVG_EXPORT);
       if (opacity !== 1) {
         node.setAttribute("stroke-opacity", `${opacity}`);
         node.setAttribute("fill-opacity", `${opacity}`);
@@ -553,31 +628,66 @@ const renderElementToSvg = (
       group.setAttribute("stroke-linecap", "round");
 
       const shapes = ShapeCache.generateElementShape(element, renderConfig);
-      shapes.forEach((shape) => {
-        const node = roughSVGDrawWithPrecision(
-          rsvg,
-          shape,
-          MAX_DECIMALS_FOR_SVG_EXPORT,
+      // KuszCanvas: chalked lines collect their nodes into layers; the
+      // arrowheads (shapes after the first) belong wholly to the outline
+      const chalkLayers = chalk ? createChalkSvgLayers() : null;
+      shapes.forEach((shape, index) => {
+        const nodes = chalkLayers
+          ? addRoughChalkNodes(
+              rsvg,
+              shape,
+              chalkLayers,
+              index > 0 ? "stroke" : null,
+            )
+          : [
+              roughSVGDrawWithPrecision(
+                rsvg,
+                shape,
+                MAX_DECIMALS_FOR_SVG_EXPORT,
+              ),
+            ];
+        for (const node of nodes) {
+          if (
+            element.type === "line" &&
+            isPathALoop(element.points) &&
+            element.backgroundColor !== "transparent"
+          ) {
+            node.setAttribute("fill-rule", "evenodd");
+          }
+          if (chalkLayers) {
+            continue;
+          }
+          if (opacity !== 1) {
+            node.setAttribute("stroke-opacity", `${opacity}`);
+            node.setAttribute("fill-opacity", `${opacity}`);
+          }
+          node.setAttribute(
+            "transform",
+            `translate(${offsetX || 0} ${
+              offsetY || 0
+            }) rotate(${degree} ${cx} ${cy})`,
+          );
+          group.appendChild(node);
+        }
+      });
+      if (chalk && chalkLayers) {
+        const chalkGroup = buildChalkSvgGroup(
+          svgRoot.ownerDocument,
+          chalk,
+          chalkLayers,
         );
         if (opacity !== 1) {
-          node.setAttribute("stroke-opacity", `${opacity}`);
-          node.setAttribute("fill-opacity", `${opacity}`);
+          chalkGroup.setAttribute("stroke-opacity", `${opacity}`);
+          chalkGroup.setAttribute("fill-opacity", `${opacity}`);
         }
-        node.setAttribute(
+        chalkGroup.setAttribute(
           "transform",
           `translate(${offsetX || 0} ${
             offsetY || 0
           }) rotate(${degree} ${cx} ${cy})`,
         );
-        if (
-          element.type === "line" &&
-          isPathALoop(element.points) &&
-          element.backgroundColor !== "transparent"
-        ) {
-          node.setAttribute("fill-rule", "evenodd");
-        }
-        group.appendChild(node);
-      });
+        group.appendChild(chalkGroup);
+      }
 
       const g = maybeWrapNodesInFrameClipPath(
         element,
@@ -597,6 +707,10 @@ const renderElementToSvg = (
     }
     case "freedraw": {
       const wrapper = svgRoot.ownerDocument.createElementNS(SVG_NS, "g");
+      // KuszCanvas: chalked freedraw sorts its nodes into layers first
+      const chalkLayers = chalk ? createChalkSvgLayers() : null;
+      const appendStroke = (node: SVGElement) =>
+        chalkLayers ? chalkLayers.stroke.push(node) : wrapper.appendChild(node);
 
       const shapes = ShapeCache.generateElementShape(element, renderConfig);
       // always ordered as [background, stroke]
@@ -637,7 +751,7 @@ const renderElementToSvg = (
                 `${element.strokeWidth * outlineWidth}`,
               );
               outline.setAttribute("d", pathD);
-              wrapper.appendChild(outline);
+              appendStroke(outline); // KuszCanvas
             }
             return { pathD, fillColorThemed };
           })();
@@ -656,7 +770,10 @@ const renderElementToSvg = (
           */ //zsviczian
           path.setAttribute("fill", fillColorThemed); //zsviczian
           path.setAttribute("d", pathD); //zsviczian
-          wrapper.appendChild(path);
+          appendStroke(path); // KuszCanvas
+        } else if (chalkLayers) {
+          // KuszCanvas: background, split into fill and outline layers
+          addRoughChalkNodes(rsvg, shape, chalkLayers);
         } else {
           // background (Drawable)
 
@@ -675,6 +792,12 @@ const renderElementToSvg = (
             wrapper.appendChild(bgNode);
           }
         }
+      }
+      if (chalk && chalkLayers) {
+        // KuszCanvas
+        wrapper.appendChild(
+          buildChalkSvgGroup(svgRoot.ownerDocument, chalk, chalkLayers),
+        );
       }
       if (opacity !== 1) {
         wrapper.setAttribute("stroke-opacity", `${opacity}`);
@@ -890,11 +1013,23 @@ const renderElementToSvg = (
                 .strokeColor,
               renderConfig.theme === THEME.DARK,
             );
-        const node = roughSVGDrawWithPrecision(
-          rsvg,
-          getFrameDrawableForPass(shape, framePass, strokeOverride),
-          MAX_DECIMALS_FOR_SVG_EXPORT,
+        const drawable = getFrameDrawableForPass(
+          shape,
+          framePass,
+          strokeOverride,
         );
+        // KuszCanvas: chalked frames draw fill and outline as separate layers
+        const node: SVGElement = chalk
+          ? (() => {
+              const layers = createChalkSvgLayers();
+              addRoughChalkNodes(rsvg, drawable, layers);
+              return buildChalkSvgGroup(svgRoot.ownerDocument, chalk, layers);
+            })()
+          : roughSVGDrawWithPrecision(
+              rsvg,
+              drawable,
+              MAX_DECIMALS_FOR_SVG_EXPORT,
+            );
         if (opacity !== 1) {
           node.setAttribute("stroke-opacity", `${opacity}`);
           node.setAttribute("fill-opacity", `${opacity}`);
@@ -992,10 +1127,8 @@ const renderElementToSvg = (
                 element.originalText,
               )
             : null;
-        if (markdownLayout) {
-          appendMarkdownPaintOpsToSvg(
-            node,
-            getMarkdownPaintOps({
+        const markdownOps = markdownLayout
+          ? getMarkdownPaintOps({
               layout: markdownLayout,
               font: getFontString(element),
               width: element.width,
@@ -1008,7 +1141,12 @@ const renderElementToSvg = (
                 renderConfig.theme === THEME.DARK,
               ),
               accentColor: getMarkdownAccentColor(),
-            }),
+            })
+          : null;
+        if (markdownOps) {
+          appendMarkdownPaintOpsToSvg(
+            node,
+            markdownOps,
             getFontFamilyString(element),
             element.fontSize,
           );
@@ -1040,6 +1178,27 @@ const renderElementToSvg = (
           text.setAttribute("dominant-baseline", "alphabetic");
           node.appendChild(text);
         }
+
+        // KuszCanvas START -- blackboard chalk: one node per Markdown op
+        // (see `appendMarkdownPaintOpsToSvg`); plain lines are all outline
+        if (chalk) {
+          const children = Array.from(node.children) as SVGElement[];
+          if (markdownOps && markdownOps.length !== children.length) {
+            throw new Error(
+              "renderElementToSvg: Markdown ops and SVG nodes are out of step",
+            );
+          }
+          const layers = createChalkSvgLayers();
+          children.forEach((child, i) =>
+            layers[
+              markdownOps ? getMarkdownOpChalkLayer(markdownOps[i]) : "stroke"
+            ].push(child),
+          );
+          node.appendChild(
+            buildChalkSvgGroup(svgRoot.ownerDocument, chalk, layers),
+          );
+        }
+        // KuszCanvas END
 
         const g = maybeWrapNodesInFrameClipPath(
           element,

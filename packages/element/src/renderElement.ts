@@ -67,6 +67,13 @@ import { getLineHeightInPx, getLineWidth } from "./textMeasurements"; // KuszCan
 import { layoutMarkdownText } from "./markdownTextLayout"; // KuszCanvas
 import { drawMarkdownText } from "./markdownTextRender"; // KuszCanvas
 import {
+  getMarkdownOpChalkLayer,
+  isBlackboardRender,
+  isChalkElement,
+  splitDrawableForChalk,
+} from "./blackboard"; // KuszCanvas -- blackboard mode
+import { drawChalked } from "./renderChalk"; // KuszCanvas -- blackboard mode
+import {
   isTextElement,
   isLinearElement,
   isFreeDrawElement,
@@ -101,6 +108,7 @@ import {
 
 import type { RenderEnvironment } from "./renderEnvironment";
 import type { FrameRenderPass } from "./frameStyle";
+import type { ChalkLayer, DeviceRect } from "./blackboard"; // KuszCanvas
 
 import type {
   ExcalidrawElement,
@@ -116,6 +124,7 @@ import type {
 } from "./types";
 
 import type { RoughCanvas } from "roughjs/bin/canvas";
+import type { Drawable } from "roughjs/bin/core"; // KuszCanvas
 
 const isPendingImageElement = (
   element: ExcalidrawElement,
@@ -362,7 +371,15 @@ const generateElementCanvas = (
 
   const rc = rough.canvas(canvas);
 
-  drawElementOnCanvas(element, rc, context, renderConfig);
+  // KuszCanvas: chalk in blackboard mode
+  drawElementOnCanvasMaybeChalked(
+    element,
+    elementsMap,
+    rc,
+    context,
+    renderConfig,
+    null,
+  );
 
   context.restore();
 
@@ -549,12 +566,35 @@ export const withSavedContext = (
   }
 };
 
+/**
+ * Draws `element` in its local coordinates.
+ *
+ * KuszCanvas: with `layer`, draws only that chalk layer (see
+ * `blackboard.ts`) and returns whether it painted anything; without, draws
+ * everything and returns true.
+ */
 const drawElementOnCanvas = (
   element: NonDeletedExcalidrawElement,
   rc: RoughCanvas,
   context: CanvasRenderingContext2D,
   renderConfig: StaticCanvasRenderConfig,
-) => {
+  layer?: ChalkLayer,
+): boolean => {
+  // KuszCanvas: only chalk-able types are ever drawn by layer
+  if (
+    layer !== undefined &&
+    (element.type === "stickynote" ||
+      element.type === "image" ||
+      isIframeLikeElement(element))
+  ) {
+    throw new Error(
+      `drawElementOnCanvas(): ${element.type} has no chalk layers`,
+    );
+  }
+  // KuszCanvas: a rough drawable's part in `layer` (all of it without one)
+  const partOf = (drawable: Drawable) =>
+    layer === undefined ? drawable : splitDrawableForChalk(drawable, layer);
+  let painted = layer === undefined;
   switch (element.type) {
     case "stickynote": {
       withSavedContext(context, () => {
@@ -595,7 +635,14 @@ const drawElementOnCanvas = (
       context.lineJoin = "round";
       context.lineCap = "round";
 
-      rc.draw(ShapeCache.generateElementShape(element, renderConfig));
+      // KuszCanvas: one chalk layer at a time in blackboard mode
+      const part = partOf(
+        ShapeCache.generateElementShape(element, renderConfig),
+      );
+      if (part) {
+        rc.draw(part);
+        painted = true;
+      }
       break;
     }
     case "arrow":
@@ -604,8 +651,18 @@ const drawElementOnCanvas = (
       context.lineCap = "round";
 
       ShapeCache.generateElementShape(element, renderConfig).forEach(
-        (shape) => {
-          rc.draw(shape);
+        (shape, index) => {
+          // KuszCanvas: arrowheads (after the body) are outline, whole
+          const part =
+            layer !== undefined && index > 0
+              ? layer === "stroke"
+                ? shape
+                : null
+              : partOf(shape);
+          if (part) {
+            rc.draw(part);
+            painted = true;
+          }
         },
       );
       break;
@@ -617,6 +674,14 @@ const drawElementOnCanvas = (
         const createPath = getCreatePath(renderConfig.renderEnvironment);
 
         for (const shape of shapes) {
+          // KuszCanvas: the pen stroke is the stroke layer
+          if (
+            typeof shape === "string" &&
+            layer !== undefined &&
+            layer !== "stroke"
+          ) {
+            continue;
+          }
           if (typeof shape === "string") {
             // zsviczian START -- retain persisted custom pen fill and outline through the owning environment
             /*
@@ -651,8 +716,14 @@ const drawElementOnCanvas = (
             );
             context.fill(path);
             // zsviczian END
+            painted = true;
           } else {
-            rc.draw(shape);
+            // KuszCanvas: a closed stroke's background is rough
+            const part = partOf(shape);
+            if (part) {
+              rc.draw(part);
+              painted = true;
+            }
           }
         }
       });
@@ -840,22 +911,34 @@ const drawElementOnCanvas = (
                 )
               : null;
           if (markdownLayout) {
-            drawMarkdownText(context, {
-              layout: markdownLayout,
-              font: getFontString(element),
-              width: element.width,
-              textAlign: element.textAlign,
-              fontSize: element.fontSize,
-              lineHeightPx,
-              verticalOffset,
-              color: applyDarkModeFilter(
-                element.strokeColor,
-                renderConfig.theme === THEME.DARK,
-              ),
-              accentColor: getMarkdownAccentColor(),
-            });
+            const drew = drawMarkdownText(
+              context,
+              {
+                layout: markdownLayout,
+                font: getFontString(element),
+                width: element.width,
+                textAlign: element.textAlign,
+                fontSize: element.fontSize,
+                lineHeightPx,
+                verticalOffset,
+                color: applyDarkModeFilter(
+                  element.strokeColor,
+                  renderConfig.theme === THEME.DARK,
+                ),
+                accentColor: getMarkdownAccentColor(),
+              },
+              layer === undefined
+                ? undefined
+                : (op) => getMarkdownOpChalkLayer(op) === layer,
+            );
+            painted = painted || drew;
             return;
           }
+          // plain text is all stroke
+          if (layer !== undefined && layer !== "stroke") {
+            return;
+          }
+          painted = true;
           // KuszCanvas END
 
           for (let index = 0; index < lines.length; index++) {
@@ -874,6 +957,78 @@ const drawElementOnCanvas = (
       }
     }
   }
+  return painted;
+};
+
+/**
+ * KuszCanvas: whether `element` renders as chalk (blackboard mode). Shared
+ * with the SVG exporter.
+ */
+export const isChalkedRender = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: ElementsMap,
+  renderConfig: Readonly<{ theme: StaticCanvasRenderConfig["theme"] }>,
+) =>
+  isBlackboardRender(renderConfig.theme, isBlackboardModeEnabled()) &&
+  isChalkElement(
+    element,
+    isTextElement(element) ? getContainerElement(element, elementsMap) : null,
+  );
+
+/** KuszCanvas: margin around a chalked element's box, in scene units. */
+const CHALK_BOUNDS_MARGIN = 20;
+
+/**
+ * KuszCanvas: the box an element paints in, in its local drawing units
+ * (origin at `element.x`/`y`), with room for strokes and arrowheads.
+ */
+export const getChalkLocalBounds = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: ElementsMap,
+): DeviceRect => {
+  const [x1, y1, x2, y2] = getElementAbsoluteCoords(element, elementsMap);
+  const margin = element.strokeWidth * 4 + CHALK_BOUNDS_MARGIN;
+  return {
+    x: x1 - element.x - margin,
+    y: y1 - element.y - margin,
+    width: x2 - x1 + margin * 2,
+    height: y2 - y1 + margin * 2,
+  };
+};
+
+/**
+ * KuszCanvas: `drawElementOnCanvas`, as chalk when blackboard mode applies
+ * to the element.
+ *
+ * @param localBounds where the element paints, in the context's current
+ *   units; null for a per-element cache canvas (all of it)
+ */
+const drawElementOnCanvasMaybeChalked = (
+  element: NonDeletedExcalidrawElement,
+  elementsMap: ElementsMap,
+  rc: RoughCanvas,
+  context: CanvasRenderingContext2D,
+  renderConfig: StaticCanvasRenderConfig,
+  localBounds: DeviceRect | null,
+) => {
+  if (!isChalkedRender(element, elementsMap, renderConfig)) {
+    drawElementOnCanvas(element, rc, context, renderConfig);
+    return;
+  }
+  drawChalked(context, {
+    localBounds,
+    seed: element.seed,
+    jitter: !isTextElement(element),
+    environment: getRenderEnvironment(renderConfig.renderEnvironment),
+    draw: (layerContext, layer) =>
+      drawElementOnCanvas(
+        element,
+        getRoughCanvasForContext(layerContext),
+        layerContext,
+        renderConfig,
+        layer,
+      ),
+  });
 };
 
 export const elementWithCanvasCache = new WeakMap<
@@ -1283,9 +1438,38 @@ const drawStylableFrame = (
     );
     context.lineJoin = "round";
     context.lineCap = "round";
-    getRoughCanvasForContext(context).draw(
-      getFrameDrawableForPass(shape, framePass, strokeOverride),
-    );
+    const drawable = getFrameDrawableForPass(shape, framePass, strokeOverride);
+    // KuszCanvas: blackboard mode (frames have no cache canvas, so the chalk
+    // layer is bounded to the frame's box on screen)
+    if (
+      isBlackboardRender(renderConfig.theme, isBlackboardModeEnabled()) &&
+      isChalkElement(element, null)
+    ) {
+      const margin = element.strokeWidth * 4 + CHALK_BOUNDS_MARGIN;
+      drawChalked(context, {
+        localBounds: {
+          x: -margin,
+          y: -margin,
+          width: element.width + margin * 2,
+          height: element.height + margin * 2,
+        },
+        seed: element.seed,
+        jitter: true,
+        environment: getRenderEnvironment(renderConfig.renderEnvironment),
+        draw: (layerContext, layer) => {
+          const part = splitDrawableForChalk(drawable, layer);
+          if (!part) {
+            return false;
+          }
+          layerContext.lineJoin = "round";
+          layerContext.lineCap = "round";
+          getRoughCanvasForContext(layerContext).draw(part);
+          return true;
+        },
+      });
+      return;
+    }
+    getRoughCanvasForContext(context).draw(drawable);
   });
 };
 
@@ -1386,7 +1570,15 @@ const drawElement = (
           context.translate(cx, cy);
           context.rotate(element.angle);
           context.translate(-shiftX, -shiftY);
-          drawElementOnCanvas(element, rc, context, renderConfig);
+          // KuszCanvas: chalk in blackboard mode
+          drawElementOnCanvasMaybeChalked(
+            element,
+            elementsMap,
+            rc,
+            context,
+            renderConfig,
+            getChalkLocalBounds(element, elementsMap),
+          );
         });
       } else {
         const elementWithCanvas = generateElementWithCanvas(
@@ -1491,7 +1683,15 @@ const drawElement = (
               context.clip("evenodd");
               context.rotate(element.angle);
               context.translate(-shiftX, -shiftY);
-              drawElementOnCanvas(element, rc, context, renderConfig);
+              // KuszCanvas: chalk in blackboard mode
+              drawElementOnCanvasMaybeChalked(
+                element,
+                elementsMap,
+                rc,
+                context,
+                renderConfig,
+                getChalkLocalBounds(element, elementsMap),
+              );
             });
           } else {
             context.rotate(element.angle);
@@ -1502,7 +1702,15 @@ const drawElement = (
             }
 
             context.translate(-shiftX, -shiftY);
-            drawElementOnCanvas(element, rc, context, renderConfig);
+            // KuszCanvas: chalk in blackboard mode
+            drawElementOnCanvasMaybeChalked(
+              element,
+              elementsMap,
+              rc,
+              context,
+              renderConfig,
+              getChalkLocalBounds(element, elementsMap),
+            );
           }
         });
         // not exporting → optimized rendering (cache & render from element
