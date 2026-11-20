@@ -20,8 +20,10 @@ import { attachInlineLinkSuggester } from "@excalidraw/excalidraw/obsidianUtils"
 import {
   createHarnessCommonHost,
   createHarnessExcalidrawHost,
+  getHarnessRenderFlags,
   installHarnessHosts,
   parseHarnessHostFlags,
+  setHarnessRenderFlag,
 } from "../harnessHost";
 
 describe("parseHarnessHostFlags", () => {
@@ -226,5 +228,47 @@ describe("installHarnessHosts", () => {
       dispose();
     }
     expect(getMarkdownAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
+  });
+});
+
+describe("setHarnessRenderFlag (main-menu toggles)", () => {
+  it("installs the common host on demand and flips flags live", () => {
+    const dispose = installHarnessHosts("");
+    try {
+      expect(getObsidianCommonHost()).toBeNull();
+      setHarnessRenderFlag("blackboard", true);
+      expect(getObsidianCommonHost()).not.toBeNull();
+      expect(isBlackboardModeEnabled()).toBe(true);
+      expect(getHarnessRenderFlags().blackboard).toBe(true);
+      setHarnessRenderFlag("markdown", true);
+      setHarnessRenderFlag("blackboard", false);
+      expect(isBlackboardModeEnabled()).toBe(false);
+      expect(isMarkdownTextRenderingEnabled()).toBe(true);
+    } finally {
+      dispose();
+    }
+    expect(getObsidianCommonHost()).toBeNull();
+    expect(getHarnessRenderFlags()).toEqual({
+      blackboard: false,
+      markdown: false,
+      accent: null,
+    });
+  });
+
+  it("starts from the URL flags and keeps the accent colour", () => {
+    const dispose = installHarnessHosts("?markdown=1&accent=e83e8c");
+    try {
+      expect(getHarnessRenderFlags().markdown).toBe(true);
+      setHarnessRenderFlag("markdown", false);
+      expect(isMarkdownTextRenderingEnabled()).toBe(false);
+      expect(getMarkdownAccentColor()).toBe("#e83e8c");
+    } finally {
+      dispose();
+    }
+  });
+
+  it("rejects an unknown flag or a non-boolean value", () => {
+    expect(() => setHarnessRenderFlag("accent" as any, true)).toThrow();
+    expect(() => setHarnessRenderFlag("blackboard", 1 as any)).toThrow();
   });
 });

@@ -332,3 +332,20 @@
     }
   }
 }
+
+// KuszCanvas: the switch on the right of a toggle row (DropdownMenuItemToggle)
+.excalidraw {
+  .dropdown-menu-item--toggle .dropdown-menu-item__badge {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+    padding-inline-start: 0.75rem;
+  }
+
+  .dropdown-menu-item__switch {
+    display: block;
+    flex: 0 0 auto;
+    pointer-events: none;
+  }
+}

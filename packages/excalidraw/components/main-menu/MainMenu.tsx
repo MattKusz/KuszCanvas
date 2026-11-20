@@ -85,6 +85,7 @@ const MainMenu = Object.assign(
     Item: DropdownMenu.Item,
     ItemLink: DropdownMenu.ItemLink,
     ItemCustom: DropdownMenu.ItemCustom,
+    ItemToggle: DropdownMenu.ItemToggle, // KuszCanvas -- on/off switch row
     Group: DropdownMenu.Group,
     Separator: DropdownMenu.Separator,
     Sub: DropdownMenuSub,

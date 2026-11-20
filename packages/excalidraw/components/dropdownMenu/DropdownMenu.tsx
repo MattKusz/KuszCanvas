@@ -13,6 +13,7 @@ import MenuSeparator from "./DropdownMenuSeparator";
 import DropdownMenuSub from "./DropdownMenuSub";
 import DropdownMenuTrigger from "./DropdownMenuTrigger";
 import DropdownMenuItemCheckbox from "./DropdownMenuItemCheckbox";
+import DropdownMenuItemToggle from "./DropdownMenuItemToggle"; // KuszCanvas
 import {
   getMenuContentComponent,
   getMenuTriggerComponent,
@@ -59,6 +60,7 @@ DropdownMenu.Trigger = DropdownMenuTrigger;
 DropdownMenu.Content = DropdownMenuContent;
 DropdownMenu.Item = DropdownMenuItem;
 DropdownMenu.ItemCheckbox = DropdownMenuItemCheckbox;
+DropdownMenu.ItemToggle = DropdownMenuItemToggle; // KuszCanvas
 DropdownMenu.ItemLink = DropdownMenuItemLink;
 DropdownMenu.ItemCustom = DropdownMenuItemCustom;
 DropdownMenu.Group = DropdownMenuGroup;

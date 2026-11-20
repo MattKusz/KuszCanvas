@@ -2,9 +2,15 @@ import {
   loginIcon,
   ExcalLogo,
   eyeIcon,
+  FreedrawIcon,
+  TextIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { useI18n } from "@excalidraw/excalidraw/i18n";
-import { MainMenu } from "@excalidraw/excalidraw/index";
+import {
+  CaptureUpdateAction,
+  MainMenu,
+  useExcalidrawAPI,
+} from "@excalidraw/excalidraw/index";
 import React from "react";
 
 import { isDevEnv } from "@excalidraw/common";
@@ -14,7 +20,37 @@ import type { Theme } from "@excalidraw/element/types";
 import { LanguageList } from "../app-language/LanguageList";
 import { isExcalidrawPlusSignedUser } from "../app_constants";
 
+import {
+  getHarnessRenderFlags,
+  setHarnessRenderFlag,
+  type HarnessToggleFlag,
+} from "../harnessHost";
+
 import { saveDebugState } from "./DebugCanvas";
+
+/**
+ * KuszCanvas: render-flag switch. Menu items mount each time the menu opens,
+ * so reading the flag here (not in the memoised menu) shows the live value.
+ */
+const RenderFlagToggle = ({
+  flag,
+  icon,
+  onChange,
+  children,
+}: {
+  flag: HarnessToggleFlag;
+  icon: React.ComponentProps<typeof MainMenu.ItemToggle>["icon"];
+  onChange: (flag: HarnessToggleFlag, value: boolean) => void;
+  children: React.ReactNode;
+}) => (
+  <MainMenu.ItemToggle
+    icon={icon}
+    checked={getHarnessRenderFlags()[flag]}
+    onChange={(value) => onChange(flag, value)}
+  >
+    {children}
+  </MainMenu.ItemToggle>
+);
 
 export const AppMainMenu: React.FC<{
   onCollabDialogOpen: () => any;
@@ -24,6 +60,16 @@ export const AppMainMenu: React.FC<{
   refresh: () => void;
 }> = React.memo((props) => {
   const { t } = useI18n();
+  const excalidrawAPI = useExcalidrawAPI();
+  // KuszCanvas: render flags change how elements draw, not the elements, so
+  // re-send the scene without an undo step to redraw it
+  const setRenderFlag = (key: HarnessToggleFlag, value: boolean) => {
+    setHarnessRenderFlag(key, value);
+    excalidrawAPI?.updateScene({
+      elements: excalidrawAPI.getSceneElementsIncludingDeleted(),
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  };
   return (
     <MainMenu>
       <MainMenu.DefaultItems.LoadScene />
@@ -80,6 +126,20 @@ export const AppMainMenu: React.FC<{
       <MainMenu.Separator />
       <MainMenu.DefaultItems.Preferences />
       <MainMenu.DefaultItems.ToggleTheme allowSystemTheme theme={props.theme} />
+      <RenderFlagToggle
+        flag="blackboard"
+        icon={FreedrawIcon}
+        onChange={setRenderFlag}
+      >
+        Blackboard mode
+      </RenderFlagToggle>
+      <RenderFlagToggle
+        flag="markdown"
+        icon={TextIcon}
+        onChange={setRenderFlag}
+      >
+        Render Markdown
+      </RenderFlagToggle>
       <MainMenu.ItemCustom>
         <LanguageList style={{ width: "100%" }} />
       </MainMenu.ItemCustom>

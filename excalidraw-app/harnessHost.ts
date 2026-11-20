@@ -15,8 +15,9 @@
  * are not provided.
  *
  * The common host (render flags) is installed only when a flag is requested
- * by URL query, e.g. `?blackboard=1&markdown=1&accent=e83e8c`, because
- * installing it also routes selection highlight colours through the host path.
+ * by URL query, e.g. `?blackboard=1&markdown=1&accent=e83e8c`, or switched on
+ * from the main menu (`setHarnessRenderFlag`), because installing it also
+ * routes selection highlight colours through the host path.
  * `accent` stands in for Obsidian's accent colour (Markdown tag colour).
  */
 
@@ -176,10 +177,7 @@ export const createHarnessExcalidrawHost =
     ) => createNoopKeyBlocker(),
   });
 
-/** Common-layer host for the harness: no-host defaults plus render flags. */
-export const createHarnessCommonHost = (
-  flags: HarnessHostFlags,
-): ObsidianCommonHostAdapter => {
+const assertFlags = (flags: HarnessHostFlags) => {
   if (
     !flags ||
     typeof flags.blackboard !== "boolean" ||
@@ -195,22 +193,84 @@ export const createHarnessCommonHost = (
   ) {
     throw new Error("Harness host: accent must be a colour string or null");
   }
-  const { blackboard, markdown, accent } = flags;
-  return {
-    protocolVersion: OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
-    // null = not running in Obsidian; the engine detects the browser itself
-    getDeviceInfo: () => null,
-    getDesktopUIMode: (): StylesPanelMode => "tray",
-    getPreferredUIMode: (
-      formFactor: EditorInterface["formFactor"],
-    ): StylesPanelMode => (formFactor === "phone" ? "mobile" : "tray"),
-    getCanvasLimits: () => ({ areaLimit: 16777216, widthHeightLimit: 32767 }),
-    getHighlightColor: (_sceneBackgroundColor: string, opacity: number) =>
-      `rgba(0,118,255,${opacity})`,
-    isBlackboardModeEnabled: () => blackboard,
-    isMarkdownTextRenderingEnabled: () => markdown,
-    getAccentColor: () => accent ?? DEFAULT_MARKDOWN_ACCENT_COLOR,
-  };
+};
+
+/** Common-layer host that reads its render flags on every call. */
+const createCommonHostReading = (
+  getFlags: () => HarnessHostFlags,
+): ObsidianCommonHostAdapter => ({
+  protocolVersion: OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
+  // null = not running in Obsidian; the engine detects the browser itself
+  getDeviceInfo: () => null,
+  getDesktopUIMode: (): StylesPanelMode => "tray",
+  getPreferredUIMode: (
+    formFactor: EditorInterface["formFactor"],
+  ): StylesPanelMode => (formFactor === "phone" ? "mobile" : "tray"),
+  getCanvasLimits: () => ({ areaLimit: 16777216, widthHeightLimit: 32767 }),
+  getHighlightColor: (_sceneBackgroundColor: string, opacity: number) =>
+    `rgba(0,118,255,${opacity})`,
+  isBlackboardModeEnabled: () => getFlags().blackboard,
+  isMarkdownTextRenderingEnabled: () => getFlags().markdown,
+  getAccentColor: () => getFlags().accent ?? DEFAULT_MARKDOWN_ACCENT_COLOR,
+});
+
+/** Common-layer host for the harness: no-host defaults plus fixed render flags. */
+export const createHarnessCommonHost = (
+  flags: HarnessHostFlags,
+): ObsidianCommonHostAdapter => {
+  assertFlags(flags);
+  const fixed = { ...flags };
+  return createCommonHostReading(() => fixed);
+};
+
+const NO_FLAGS: HarnessHostFlags = {
+  blackboard: false,
+  markdown: false,
+  accent: null,
+};
+
+/** Flags the installed harness host currently reports. */
+let liveFlags: HarnessHostFlags = NO_FLAGS;
+/** `true` while `installHarnessHosts` is in effect */
+let installed = false;
+/** removes the live common host; `null` = not installed */
+let disposeLiveCommonHost: (() => void) | null = null;
+
+const installLiveCommonHost = () => {
+  if (!disposeLiveCommonHost) {
+    disposeLiveCommonHost = configureObsidianCommonHost(
+      createCommonHostReading(() => liveFlags),
+    );
+  }
+};
+
+/** The render flags in effect: URL flags, then any main-menu changes. */
+export const getHarnessRenderFlags = (): HarnessHostFlags => ({ ...liveFlags });
+
+/** Render flags the main menu can switch. */
+export type HarnessToggleFlag = "blackboard" | "markdown";
+
+/**
+ * Main-menu toggle: sets a render flag for the running harness, installing
+ * the common host on first use. The caller redraws the scene.
+ */
+export const setHarnessRenderFlag = (
+  key: HarnessToggleFlag,
+  value: boolean,
+): void => {
+  if (key !== "blackboard" && key !== "markdown") {
+    throw new Error(
+      `Harness host: "${key}" is not a switchable flag (blackboard, markdown)`,
+    );
+  }
+  if (typeof value !== "boolean") {
+    throw new Error(`Harness host: "${key}" must be set to true or false`);
+  }
+  if (!installed) {
+    throw new Error("Harness host: call installHarnessHosts first");
+  }
+  liveFlags = { ...liveFlags, [key]: value };
+  installLiveCommonHost();
 };
 
 /**
@@ -219,15 +279,22 @@ export const createHarnessCommonHost = (
  */
 export const installHarnessHosts = (search: string): (() => void) => {
   const flags = parseHarnessHostFlags(search);
+  if (installed) {
+    throw new Error("Harness host: already installed");
+  }
   const disposeExcalidrawHost = configureObsidianExcalidrawHost(
     createHarnessExcalidrawHost(),
   );
-  const disposeCommonHost =
-    flags.blackboard || flags.markdown || flags.accent !== null
-      ? configureObsidianCommonHost(createHarnessCommonHost(flags))
-      : null;
+  installed = true;
+  liveFlags = flags;
+  if (flags.blackboard || flags.markdown || flags.accent !== null) {
+    installLiveCommonHost();
+  }
   return () => {
-    disposeCommonHost?.();
+    disposeLiveCommonHost?.();
+    disposeLiveCommonHost = null;
+    liveFlags = NO_FLAGS;
+    installed = false;
     disposeExcalidrawHost();
   };
 };
