@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Work on branch `kusch/whiteboard`. Build here the engine that the sibling `../KuszCanvas-Obsidian` plugin vendors; this repo forks zsviczian/excalidraw, which forks excalidraw.
+Work on `master` (the whiteboard work from `kusch/whiteboard` is merged into it). Build here the engine that the sibling `../KuszCanvas-Obsidian` plugin vendors; this repo forks zsviczian/excalidraw, which forks excalidraw.
 
 ## Module map
 
