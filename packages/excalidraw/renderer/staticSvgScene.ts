@@ -16,7 +16,6 @@ import {
   STICKY_NOTE_BOTTOM_SHADE,
   STICKY_NOTE_FOOTER,
   getFontString, // KuszCanvas -- Markdown text layout
-  getMarkdownAccentColor, // KuszCanvas
   isMarkdownTextRenderingEnabled, // KuszCanvas
   isBlackboardModeEnabled, // KuszCanvas -- blackboard paper
 } from "@excalidraw/common";
@@ -1158,7 +1157,6 @@ const renderElementToSvg = (
                 element.strokeColor,
                 renderConfig.theme === THEME.DARK,
               ),
-              accentColor: getMarkdownAccentColor(),
             })
           : null;
         if (markdownOps) {

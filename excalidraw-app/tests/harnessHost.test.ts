@@ -1,10 +1,8 @@
 import {
   MAX_ZOOM,
   MIN_ZOOM,
-  DEFAULT_MARKDOWN_ACCENT_COLOR,
   OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
   ZOOM_STEP,
-  getMarkdownAccentColor,
   getObsidianCommonHost,
   isBlackboardModeEnabled,
   isMarkdownTextRenderingEnabled,
@@ -31,7 +29,6 @@ describe("parseHarnessHostFlags", () => {
     expect(parseHarnessHostFlags("")).toEqual({
       blackboard: false,
       markdown: false,
-      accent: null,
     });
   });
 
@@ -39,12 +36,10 @@ describe("parseHarnessHostFlags", () => {
     expect(parseHarnessHostFlags("?blackboard=1&markdown=true")).toEqual({
       blackboard: true,
       markdown: true,
-      accent: null,
     });
     expect(parseHarnessHostFlags("?blackboard=0&markdown=false")).toEqual({
       blackboard: false,
       markdown: false,
-      accent: null,
     });
   });
 
@@ -52,28 +47,14 @@ describe("parseHarnessHostFlags", () => {
     expect(parseHarnessHostFlags("?room=abc&markdown=1")).toEqual({
       blackboard: false,
       markdown: true,
-      accent: null,
     });
   });
 
-  it("reads ?accent= as hex (with or without #), rgb()/hsl() or a name", () => {
-    expect(parseHarnessHostFlags("?accent=e83e8c").accent).toBe("#e83e8c");
-    expect(parseHarnessHostFlags("?accent=%23abc").accent).toBe("#abc");
-    expect(parseHarnessHostFlags("?accent=rgb(10,20,30)").accent).toBe(
-      "rgb(10,20,30)",
-    );
-    expect(parseHarnessHostFlags("?accent=hsl(250 80% 60%)").accent).toBe(
-      "hsl(250 80% 60%)",
-    );
-    expect(parseHarnessHostFlags("?accent=teal").accent).toBe("teal");
-  });
-
-  it("rejects an accent that is not a colour", () => {
-    expect(() => parseHarnessHostFlags("?accent=12345")).toThrow(/accent/);
-    expect(() => parseHarnessHostFlags("?accent=")).toThrow(/accent/);
-    expect(() => parseHarnessHostFlags("?accent=url(javascript:x)")).toThrow(
-      /accent/,
-    );
+  it("ignores the retired ?accent= query", () => {
+    expect(parseHarnessHostFlags("?accent=e83e8c")).toEqual({
+      blackboard: false,
+      markdown: false,
+    });
   });
 
   it("rejects an unrecognised flag value instead of guessing", () => {
@@ -145,7 +126,6 @@ describe("createHarnessCommonHost", () => {
     const host: ObsidianCommonHostAdapter = createHarnessCommonHost({
       blackboard: true,
       markdown: false,
-      accent: null,
     });
     expect(host.protocolVersion).toBe(OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION);
     expect(host.getDeviceInfo()).toBeNull();
@@ -159,16 +139,6 @@ describe("createHarnessCommonHost", () => {
     expect(host.getHighlightColor("#fff", 0.5)).toBe("rgba(0,118,255,0.5)");
     expect(host.isBlackboardModeEnabled()).toBe(true);
     expect(host.isMarkdownTextRenderingEnabled()).toBe(false);
-    expect(host.getAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
-  });
-
-  it("returns the configured accent colour", () => {
-    const host = createHarnessCommonHost({
-      blackboard: false,
-      markdown: true,
-      accent: "#e83e8c",
-    });
-    expect(host.getAccentColor()).toBe("#e83e8c");
   });
 
   it("rejects missing flags", () => {
@@ -176,15 +146,8 @@ describe("createHarnessCommonHost", () => {
       createHarnessCommonHost({ blackboard: true } as unknown as {
         blackboard: boolean;
         markdown: boolean;
-        accent: null;
       }),
     ).toThrow(/markdown/);
-    expect(() =>
-      createHarnessCommonHost({
-        blackboard: false,
-        markdown: true,
-      } as unknown as { blackboard: boolean; markdown: boolean; accent: null }),
-    ).toThrow(/accent/);
   });
 });
 
@@ -219,16 +182,6 @@ describe("installHarnessHosts", () => {
     expect(getObsidianCommonHost()).toBeNull();
     expect(isMarkdownTextRenderingEnabled()).toBe(false);
   });
-
-  it("installs the common host for an accent colour alone", () => {
-    const dispose = installHarnessHosts("?markdown=1&accent=e83e8c");
-    try {
-      expect(getMarkdownAccentColor()).toBe("#e83e8c");
-    } finally {
-      dispose();
-    }
-    expect(getMarkdownAccentColor()).toBe(DEFAULT_MARKDOWN_ACCENT_COLOR);
-  });
 });
 
 describe("setHarnessRenderFlag (main-menu toggles)", () => {
@@ -251,17 +204,15 @@ describe("setHarnessRenderFlag (main-menu toggles)", () => {
     expect(getHarnessRenderFlags()).toEqual({
       blackboard: false,
       markdown: false,
-      accent: null,
     });
   });
 
-  it("starts from the URL flags and keeps the accent colour", () => {
-    const dispose = installHarnessHosts("?markdown=1&accent=e83e8c");
+  it("starts from the URL flags", () => {
+    const dispose = installHarnessHosts("?markdown=1");
     try {
       expect(getHarnessRenderFlags().markdown).toBe(true);
       setHarnessRenderFlag("markdown", false);
       expect(isMarkdownTextRenderingEnabled()).toBe(false);
-      expect(getMarkdownAccentColor()).toBe("#e83e8c");
     } finally {
       dispose();
     }

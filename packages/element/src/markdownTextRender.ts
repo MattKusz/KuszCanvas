@@ -23,10 +23,9 @@ import type { ExcalidrawTextElement, FontString } from "./types";
 /** Highlighter yellow; translucent so it reads on light and dark scenes. */
 export const MARKDOWN_HIGHLIGHT_COLOR = "rgba(255, 208, 0, 0.4)";
 
-/** Opacities applied to the text or accent colour for secondary marks. */
+/** Opacities applied to the text colour for secondary marks. */
 export const MARKDOWN_MARK_ALPHA = Object.freeze({
   codeBackground: 0.1,
-  tagBackground: 0.15,
   quoteBar: 0.35,
   tableGrid: 0.4,
   tableHeader: 0.06,
@@ -54,15 +53,12 @@ export type MarkdownDrawOptions = Readonly<{
   verticalOffset: number;
   /** text colour, dark-mode filter already applied */
   color: string;
-  /** tag colour (the host's accent) */
-  accentColor: string;
 }>;
 
 /** KuszCanvas: what a Markdown rect paints, so blackboard mode can layer it. */
 export type MarkdownRectRole =
   | "highlight"
   | "code"
-  | "tag"
   | "tableHeader"
   | "tableGrid"
   | "quote"
@@ -128,7 +124,6 @@ const validateOptions = (options: MarkdownDrawOptions) => {
   }
   assertString("font", options.font);
   assertString("color", options.color);
-  assertString("accentColor", options.accentColor);
 };
 
 const getLineX = (line: MarkdownVisualLine, options: MarkdownDrawOptions) =>
@@ -248,21 +243,8 @@ const pushSegment = (
       radius: fontSize * 0.2,
     });
   }
-  if (style.tag) {
-    ops.push({
-      kind: "rect",
-      role: "tag",
-      x,
-      y: boxTop,
-      width: segment.width,
-      height: boxHeight,
-      color: options.accentColor,
-      alpha: MARKDOWN_MARK_ALPHA.tagBackground,
-      radius: boxHeight / 2,
-    });
-  }
 
-  const color = style.tag ? options.accentColor : options.color;
+  const { color } = options;
   const textX = lineX + segment.textX;
   ops.push({
     kind: "text",
@@ -304,7 +286,6 @@ const PLAIN_STYLE: MarkdownInlineStyle = Object.freeze({
   underline: false,
   highlight: false,
   code: false,
-  tag: false,
 });
 
 /** Paint ops for `options.layout`, with the element's top-left at the origin. */

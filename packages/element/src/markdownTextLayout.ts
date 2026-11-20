@@ -38,7 +38,6 @@ export const MARKDOWN_TEXT_METRICS = Object.freeze({
   bulletOffset: 0.55,
   bulletRadius: 0.13,
   orderedGap: 0.35,
-  tagPadding: 0.3,
   codePadding: 0.2,
   tableCellPadding: 0.5,
 });
@@ -168,12 +167,7 @@ const buildSegments = (
   const segments: MarkdownSegment[] = pieces.map(({ text, style }) => {
     const runFont = getMarkdownRunFont(font, style);
     const padding =
-      fontSize *
-      (style.tag
-        ? MARKDOWN_TEXT_METRICS.tagPadding
-        : style.code
-        ? MARKDOWN_TEXT_METRICS.codePadding
-        : 0);
+      fontSize * (style.code ? MARKDOWN_TEXT_METRICS.codePadding : 0);
     const textWidth = measure(text, runFont);
     const segment: MarkdownSegment = {
       text,

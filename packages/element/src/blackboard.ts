@@ -190,7 +190,6 @@ export const splitDrawableForChalk = (
 
 const MARKDOWN_RECT_LAYERS: Readonly<Record<string, ChalkLayer>> = {
   highlight: "fill",
-  tag: "fill",
   tableHeader: "fill",
   code: "solid",
   decoration: "stroke",

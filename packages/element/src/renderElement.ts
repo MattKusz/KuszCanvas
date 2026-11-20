@@ -29,7 +29,6 @@ import {
   getWidthHeightLimit, // zsviczian -- host canvas limits
   isBlackboardModeEnabled, // KuszCanvas -- host render flags
   isMarkdownTextRenderingEnabled, // KuszCanvas -- host render flags
-  getMarkdownAccentColor, // KuszCanvas -- Markdown tag colour
   STICKY_NOTE_EDGE_SHADOW_OPACITY,
   STICKY_NOTE_EDGE_SHADOW_WIDTH,
   STICKY_NOTE_BOTTOM_SHADE,
@@ -260,13 +259,7 @@ export interface ExcalidrawElementWithCanvas {
   /** KuszCanvas: host render flags the bitmap was drawn with */
   blackboardMode: boolean;
   markdownText: boolean;
-  /** KuszCanvas: tag colour the bitmap was drawn with; null while Markdown is off */
-  markdownAccent: string | null;
 }
-
-/** KuszCanvas: the accent colour a bitmap depends on (none while Markdown is off). */
-const getMarkdownAccentKey = (): string | null =>
-  isMarkdownTextRenderingEnabled() ? getMarkdownAccentColor() : null;
 
 const cappedElementCanvasSize = (
   element: NonDeletedExcalidrawElement,
@@ -399,7 +392,6 @@ const generateElementCanvas = (
     imageCrop: isImageElement(element) ? element.crop : null,
     blackboardMode: isBlackboardModeEnabled(),
     markdownText: isMarkdownTextRenderingEnabled(),
-    markdownAccent: getMarkdownAccentKey(),
   };
 };
 
@@ -918,7 +910,6 @@ const drawElementOnCanvas = (
                   element.strokeColor,
                   renderConfig.theme === THEME.DARK,
                 ),
-                accentColor: getMarkdownAccentColor(),
               },
               layer === undefined
                 ? undefined
@@ -1075,8 +1066,7 @@ const generateElementWithCanvas = (
     prevElementWithCanvas.imageCrop !== imageCrop ||
     prevElementWithCanvas.containingFrameOpacity !== containingFrameOpacity ||
     prevElementWithCanvas.blackboardMode !== isBlackboardModeEnabled() ||
-    prevElementWithCanvas.markdownText !== isMarkdownTextRenderingEnabled() ||
-    prevElementWithCanvas.markdownAccent !== getMarkdownAccentKey()
+    prevElementWithCanvas.markdownText !== isMarkdownTextRenderingEnabled()
   ) {
     const elementWithCanvas = generateElementCanvas(
       element,

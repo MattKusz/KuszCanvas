@@ -13,7 +13,6 @@ const PLAIN = {
   underline: false,
   highlight: false,
   code: false,
-  tag: false,
 };
 
 const FAMILY = "Excalifont, Xiaolai";
@@ -71,7 +70,7 @@ describe("appendMarkdownPaintOpsToSvg", () => {
     const parent = render([
       {
         kind: "rect",
-        role: "tag",
+        role: "highlight",
         x: 1,
         y: 2,
         width: 3,

@@ -15,14 +15,12 @@
  * are not provided.
  *
  * The common host (render flags) is installed only when a flag is requested
- * by URL query, e.g. `?blackboard=1&markdown=1&accent=e83e8c`, or switched on
- * from the main menu (`setHarnessRenderFlag`), because installing it also
- * routes selection highlight colours through the host path.
- * `accent` stands in for Obsidian's accent colour (Markdown tag colour).
+ * by URL query, e.g. `?blackboard=1&markdown=1`, or switched on from the main
+ * menu (`setHarnessRenderFlag`), because installing it also routes selection
+ * highlight colours through the host path.
  */
 
 import {
-  DEFAULT_MARKDOWN_ACCENT_COLOR,
   MAX_ZOOM,
   MIN_ZOOM,
   OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION,
@@ -45,36 +43,11 @@ import {
 export type HarnessHostFlags = Readonly<{
   blackboard: boolean;
   markdown: boolean;
-  /** CSS colour for Markdown tags; `null` = the engine default */
-  accent: string | null;
 }>;
 
 const FLAG_QUERY_KEYS: Readonly<Record<keyof HarnessHostFlags, string>> = {
   blackboard: "blackboard",
   markdown: "markdown",
-  accent: "accent",
-};
-
-const HEX_COLOR = /^#?([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const FUNCTION_COLOR = /^(rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\)$/i;
-const NAMED_COLOR = /^[a-z]+$/i;
-
-/** `?accent=` value: hex (the `#` optional, as it needs URL escaping), rgb()/hsl() or a colour name. */
-const parseAccentValue = (value: string | null): string | null => {
-  if (value === null) {
-    return null;
-  }
-  const trimmed = value.trim();
-  const hex = HEX_COLOR.exec(trimmed);
-  if (hex) {
-    return `#${hex[1]}`;
-  }
-  if (FUNCTION_COLOR.test(trimmed) || NAMED_COLOR.test(trimmed)) {
-    return trimmed;
-  }
-  throw new Error(
-    `Harness host: query "accent=${value}" must be a hex, rgb(), hsl() or named colour`,
-  );
 };
 
 const parseFlagValue = (key: string, value: string | null): boolean => {
@@ -92,7 +65,7 @@ const parseFlagValue = (key: string, value: string | null): boolean => {
   );
 };
 
-/** Reads `?blackboard=`, `?markdown=` and `?accent=` from a `location.search` string. */
+/** Reads `?blackboard=` and `?markdown=` from a `location.search` string. */
 export const parseHarnessHostFlags = (search: string): HarnessHostFlags => {
   if (typeof search !== "string") {
     throw new Error("Harness host: search must be a string");
@@ -107,7 +80,6 @@ export const parseHarnessHostFlags = (search: string): HarnessHostFlags => {
       FLAG_QUERY_KEYS.markdown,
       params.get(FLAG_QUERY_KEYS.markdown),
     ),
-    accent: parseAccentValue(params.get(FLAG_QUERY_KEYS.accent)),
   };
 };
 
@@ -187,12 +159,6 @@ const assertFlags = (flags: HarnessHostFlags) => {
       "Harness host: flags must have boolean blackboard and markdown",
     );
   }
-  if (
-    flags.accent !== null &&
-    (typeof flags.accent !== "string" || flags.accent.trim() === "")
-  ) {
-    throw new Error("Harness host: accent must be a colour string or null");
-  }
 };
 
 /** Common-layer host that reads its render flags on every call. */
@@ -211,7 +177,6 @@ const createCommonHostReading = (
     `rgba(0,118,255,${opacity})`,
   isBlackboardModeEnabled: () => getFlags().blackboard,
   isMarkdownTextRenderingEnabled: () => getFlags().markdown,
-  getAccentColor: () => getFlags().accent ?? DEFAULT_MARKDOWN_ACCENT_COLOR,
 });
 
 /** Common-layer host for the harness: no-host defaults plus fixed render flags. */
@@ -226,7 +191,6 @@ export const createHarnessCommonHost = (
 const NO_FLAGS: HarnessHostFlags = {
   blackboard: false,
   markdown: false,
-  accent: null,
 };
 
 /** Flags the installed harness host currently reports. */
@@ -287,7 +251,7 @@ export const installHarnessHosts = (search: string): (() => void) => {
   );
   installed = true;
   liveFlags = flags;
-  if (flags.blackboard || flags.markdown || flags.accent !== null) {
+  if (flags.blackboard || flags.markdown) {
     installLiveCommonHost();
   }
   return () => {

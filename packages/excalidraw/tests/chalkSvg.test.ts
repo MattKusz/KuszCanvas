@@ -189,7 +189,6 @@ describe("SVG export in blackboard mode", () => {
     getHighlightColor: () => "#0076ff",
     isBlackboardModeEnabled: () => flags.blackboard,
     isMarkdownTextRenderingEnabled: () => false,
-    getAccentColor: () => "#8a5cf5",
   };
 
   beforeEach(() => {

@@ -46,7 +46,6 @@ const makeHost = (markdown: boolean): ObsidianCommonHostAdapter => ({
   getHighlightColor: () => "rgba(0,0,0,1)",
   isBlackboardModeEnabled: () => false,
   isMarkdownTextRenderingEnabled: () => markdown,
-  getAccentColor: () => "#8a5cf5",
 });
 
 describe("getMarkdownRunFont", () => {
@@ -57,7 +56,6 @@ describe("getMarkdownRunFont", () => {
     underline: false,
     highlight: false,
     code: false,
-    tag: false,
   };
 
   it("prefixes weight and style", () => {
@@ -143,10 +141,9 @@ describe("layoutMarkdownText", () => {
     expect(withoutSource.lines[1].bullet?.kind).toBe("label");
   });
 
-  it("pads tags and code spans", () => {
-    expect(layoutMarkdownText("#ab", FONT, measure)!.width).toBe(
-      30 + 2 * 0.3 * EM,
-    );
+  it("pads code spans but not tags", () => {
+    expect(layoutMarkdownText("a #ab", FONT, measure)).toBeNull();
+    expect(layoutMarkdownText("**#ab**", FONT, measure)!.width).toBe(33);
     expect(layoutMarkdownText("`ab`", FONT, measure)!.width).toBe(
       24 + 2 * 0.2 * EM,
     );

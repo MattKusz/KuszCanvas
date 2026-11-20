@@ -124,7 +124,6 @@ describe("Obsidian wrap link ownership", () => {
         getHighlightColor: () => "#0076ff",
         isBlackboardModeEnabled: () => false,
         isMarkdownTextRenderingEnabled: () => false,
-        getAccentColor: () => "#8a5cf5",
       });
       try {
         const { api, select, toggle } = await mount(

@@ -15,7 +15,7 @@ import type { EditorInterface, StylesPanelMode } from "./editorInterface";
  */
 
 /** Runtime protocol understood by this version of the fork. */
-export const OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION = 3 as const; // KuszCanvas -- protocol 2 adds blackboard and Markdown-text render flags; protocol 3 adds the accent colour
+export const OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION = 4 as const; // KuszCanvas -- protocol 2 adds blackboard and Markdown-text render flags; protocol 3 added the accent colour (Markdown tag pills), protocol 4 removes it
 
 /** Device capabilities supplied by the Obsidian host. */
 export type ObsidianDeviceType = Readonly<{
@@ -70,13 +70,6 @@ export interface ObsidianCommonHostAdapter {
    * Read live on every render; must return a boolean.
    */
   isMarkdownTextRenderingEnabled(): boolean;
-
-  /**
-   * KuszCanvas: the accent colour that Markdown tags render in (Obsidian's
-   * `--color-accent`, or a configurable colour outside Obsidian). Read live
-   * on every render; must return a non-empty CSS colour string.
-   */
-  getAccentColor(): string;
 }
 
 /** Idempotent cleanup returned when a host adapter is configured. */

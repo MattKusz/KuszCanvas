@@ -20,7 +20,6 @@ import {
   THEME,
   applyDarkModeFilter,
   getFontString,
-  getMarkdownAccentColor,
   getVerticalOffset,
   isBlackboardModeEnabled,
   isMarkdownTextRenderingEnabled,
@@ -253,7 +252,6 @@ export const createLiveTextPreview = ({
               lineHeightPx,
             ),
             color,
-            accentColor: getMarkdownAccentColor(),
           },
           layer === undefined
             ? undefined

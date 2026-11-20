@@ -294,7 +294,6 @@ describe("getMarkdownOpChalkLayer", () => {
 
   it("puts backgrounds in the fill layer and marks in the stroke layer", () => {
     expect(getMarkdownOpChalkLayer(rectOp("highlight"))).toBe("fill");
-    expect(getMarkdownOpChalkLayer(rectOp("tag"))).toBe("fill");
     expect(getMarkdownOpChalkLayer(rectOp("tableHeader"))).toBe("fill");
     expect(getMarkdownOpChalkLayer(rectOp("code"))).toBe("solid");
     expect(getMarkdownOpChalkLayer(rectOp("decoration"))).toBe("stroke");

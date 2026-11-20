@@ -13,15 +13,7 @@ const describeRuns = (runs: readonly MarkdownRun[]) =>
     .filter((run) => !run.hidden)
     .map((run) => {
       const flags = (
-        [
-          "bold",
-          "italic",
-          "strike",
-          "underline",
-          "highlight",
-          "code",
-          "tag",
-        ] as const
+        ["bold", "italic", "strike", "underline", "highlight", "code"] as const
       ).filter((flag) => run.style[flag]);
       return flags.length ? `[${run.text}:${flags.join("+")}]` : run.text;
     })
@@ -107,28 +99,16 @@ describe("parseMarkdownInline", () => {
     expect(visibleText(parseMarkdownInline("C:\\temp"))).toBe("C:\\temp");
   });
 
-  it("parses Obsidian tags", () => {
+  // Obsidian indexes `#tags` itself; the canvas draws them as plain text
+  it("leaves Obsidian tags unstyled", () => {
     expect(describeRuns(parseMarkdownInline("see #project/kusch now"))).toBe(
-      "see [#project/kusch:tag] now",
+      "see #project/kusch now",
     );
-    expect(describeRuns(parseMarkdownInline("#tag_with_underscores"))).toBe(
-      "[#tag_with_underscores:tag]",
-    );
-    expect(describeRuns(parseMarkdownInline("#Bauträger"))).toBe(
-      "[#Bauträger:tag]",
-    );
-  });
-
-  it("does not treat numbers, headings or mid-word hashes as tags", () => {
-    expect(describeRuns(parseMarkdownInline("#123"))).toBe("#123");
-    expect(describeRuns(parseMarkdownInline("# heading"))).toBe("# heading");
-    expect(describeRuns(parseMarkdownInline("issue#12a"))).toBe("issue#12a");
-  });
-
-  it("styles tags inside emphasis", () => {
-    expect(describeRuns(parseMarkdownInline("**#tag**"))).toBe(
-      "[#tag:bold+tag]",
-    );
+    expect(describeRuns(parseMarkdownInline("#Bauträger"))).toBe("#Bauträger");
+    expect(describeRuns(parseMarkdownInline("**#tag**"))).toBe("[#tag:bold]");
+    expect(
+      Object.keys(parseMarkdownInline("#tag")[0].style).includes("tag"),
+    ).toBe(false);
   });
 
   it("matches emphasis across newlines in one paragraph", () => {
@@ -254,7 +234,7 @@ describe("hasMarkdownSyntax / isPlainMarkdown", () => {
     expect(hasMarkdownSyntax("plain words, numbers 1.5 and dots.")).toBe(false);
     expect(hasMarkdownSyntax("a **b**")).toBe(true);
     expect(hasMarkdownSyntax("- item")).toBe(true);
-    expect(hasMarkdownSyntax("#tag")).toBe(true);
+    expect(hasMarkdownSyntax("#tag")).toBe(false);
     expect(hasMarkdownSyntax("1. item")).toBe(true);
   });
 
@@ -263,6 +243,6 @@ describe("hasMarkdownSyntax / isPlainMarkdown", () => {
     expect(isPlainMarkdown(parseMarkdownText("a *b*"))).toBe(false);
     expect(isPlainMarkdown(parseMarkdownText("- a"))).toBe(false);
     expect(isPlainMarkdown(parseMarkdownText("> a"))).toBe(false);
-    expect(isPlainMarkdown(parseMarkdownText("#tag"))).toBe(false);
+    expect(isPlainMarkdown(parseMarkdownText("#tag"))).toBe(true);
   });
 });

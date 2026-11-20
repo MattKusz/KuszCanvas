@@ -70,7 +70,6 @@ const draw = (text: string, overrides: Partial<MarkdownDrawOptions> = {}) => {
     lineHeightPx: 25,
     verticalOffset: 18,
     color: "#1e1e1e",
-    accentColor: "#e83e8c",
     ...overrides,
   });
   return calls;
@@ -90,12 +89,11 @@ describe("drawMarkdownText", () => {
     expect(plain.args[1]).toBe(20);
   });
 
-  it("draws tags in the accent colour", () => {
-    const calls = draw("see #tag");
-    const tag = calls.find((call) => call.args[0] === "#tag")!;
-    expect(tag.fillStyle).toBe("#e83e8c");
-    const plain = calls.find((call) => call.args[0] === "see ")!;
-    expect(plain.fillStyle).toBe("#1e1e1e");
+  it("draws tags as plain text, with no pill", () => {
+    const calls = draw("**see** #tag");
+    const tag = calls.find((call) => call.args[0] === " #tag")!;
+    expect(tag.fillStyle).toBe("#1e1e1e");
+    expect(calls.filter((call) => call.op !== "fillText")).toEqual([]);
   });
 
   it("draws a highlight behind highlighted text", () => {
@@ -144,13 +142,11 @@ describe("drawMarkdownText", () => {
         lineHeightPx: 25,
         verticalOffset: 18,
         color: "#000",
-        accentColor: "#000",
       }),
     ).toThrow(/layout/);
     expect(() => draw("**a**", { lineHeightPx: Number.NaN })).toThrow(
       /lineHeightPx/,
     );
-    expect(() => draw("**a**", { accentColor: "" })).toThrow(/accentColor/);
   });
 });
 
@@ -166,7 +162,6 @@ describe("getMarkdownPaintOps", () => {
       lineHeightPx: 25,
       verticalOffset: 18,
       color: "#1e1e1e",
-      accentColor: "#e83e8c",
     });
   };
 
@@ -211,7 +206,6 @@ describe("drawMarkdownText op filter", () => {
         lineHeightPx: 25,
         verticalOffset: 18,
         color: "#1e1e1e",
-        accentColor: "#e83e8c",
       },
       include,
     );
@@ -248,7 +242,6 @@ describe("drawMarkdownText op filter", () => {
       lineHeightPx: 25,
       verticalOffset: 18,
       color: "#1e1e1e",
-      accentColor: "#e83e8c",
     });
     const roles = new Set(
       ops.flatMap((op) => (op.kind === "rect" ? [op.role] : [])),
@@ -261,7 +254,6 @@ describe("drawMarkdownText op filter", () => {
         "quote",
         "tableGrid",
         "tableHeader",
-        "tag",
       ].sort(),
     );
   });
@@ -311,8 +303,6 @@ describe("drawPlainTextLines", () => {
     expect(() =>
       drawPlainTextLines(context, element, "#000", Number.NaN),
     ).toThrow(/width/);
-    expect(() => drawPlainTextLines(context, element, "", 10)).toThrow(
-      /color/,
-    );
+    expect(() => drawPlainTextLines(context, element, "", 10)).toThrow(/color/);
   });
 });

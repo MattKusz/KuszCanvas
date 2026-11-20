@@ -3,9 +3,10 @@
  *
  * Parses the inline and line-block Markdown subset that text elements render
  * on canvas: `**`/`__` bold, `*`/`_` italic, `~~` strike, `==` highlight,
- * `<u>…</u>` underline, `` ` `` code, `\` escapes and Obsidian `#tags`; and
- * per line `-`/`*`/`+` bullets, `1.`/`1)` ordered items, `>` quotes and GFM
- * tables. Headings, horizontal rules and fenced code render literally.
+ * `<u>…</u>` underline, `` ` `` code and `\` escapes; and per line
+ * `-`/`*`/`+` bullets, `1.`/`1)` ordered items, `>` quotes and GFM tables.
+ * Headings, horizontal rules, fenced code and Obsidian `#tags` render
+ * literally (Obsidian indexes tags itself).
  *
  * Every character of a parsed string belongs to exactly one run; markers the
  * parser consumes are `hidden` runs, so callers can map source offsets to
@@ -21,7 +22,6 @@ export type MarkdownInlineStyle = Readonly<{
   underline: boolean;
   highlight: boolean;
   code: boolean;
-  tag: boolean;
 }>;
 
 /** A stretch of a parsed string with one style. Offsets are code units. */
@@ -86,7 +86,6 @@ const STRIKE = 4;
 const UNDERLINE = 8;
 const HIGHLIGHT = 16;
 const CODE = 32;
-const TAG = 64;
 
 const styleCache = new Map<number, MarkdownInlineStyle>();
 const styleFromFlags = (flags: number): MarkdownInlineStyle => {
@@ -99,7 +98,6 @@ const styleFromFlags = (flags: number): MarkdownInlineStyle => {
       underline: (flags & UNDERLINE) !== 0,
       highlight: (flags & HIGHLIGHT) !== 0,
       code: (flags & CODE) !== 0,
-      tag: (flags & TAG) !== 0,
     });
     styleCache.set(flags, style);
   }
@@ -110,9 +108,6 @@ export const PLAIN_MARKDOWN_STYLE = styleFromFlags(0);
 
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
 const WHITESPACE = /\s/;
-// Obsidian tag body: letters, numbers, `_`, `-`, `/`; needs a non-digit
-const TAG_REGEX = /^#([\p{L}\p{N}_\-/]+)/u;
-const TAG_HAS_NON_DIGIT = /[^\d]/;
 
 type Delimiter = {
   char: "*" | "_" | "~" | "=" | "u";
@@ -155,7 +150,7 @@ export const parseMarkdownInline = (text: string): MarkdownRun[] => {
   const hidden = new Uint8Array(length);
   const delimiters: Delimiter[] = [];
 
-  // 1. tokenise: code spans, escapes, tags, `<u>` tags and delimiter runs
+  // 1. tokenise: code spans, escapes, `<u>` tags and delimiter runs
   let i = 0;
   while (i < length) {
     const char = text[i];
@@ -197,24 +192,6 @@ export const parseMarkdownInline = (text: string): MarkdownRun[] => {
       }
       i = closeAt + runLength;
       continue;
-    }
-
-    // a tag follows whitespace or punctuation (`**#tag**`), not `&#` or `##`
-    if (
-      char === "#" &&
-      (isWhitespaceChar(text[i - 1]) ||
-        (isPunctuationChar(text[i - 1]) &&
-          text[i - 1] !== "#" &&
-          text[i - 1] !== "&"))
-    ) {
-      const match = TAG_REGEX.exec(text.slice(i, i + 256));
-      if (match && TAG_HAS_NON_DIGIT.test(match[1])) {
-        for (let k = i; k < i + match[0].length; k++) {
-          flags[k] |= TAG;
-        }
-        i += match[0].length;
-        continue;
-      }
     }
 
     if (char === "<") {
@@ -777,7 +754,7 @@ export const parseMarkdownText = (
 };
 
 // any character or line start that could begin Markdown this parser renders
-const MARKDOWN_SYNTAX_HINT = /[*_~=`\\<#|>]|^\s*(?:[-+]|\d{1,9}[.)])\s/m;
+const MARKDOWN_SYNTAX_HINT = /[*_~=`\\<|>]|^\s*(?:[-+]|\d{1,9}[.)])\s/m;
 
 /** Cheap pre-check: `false` means the text certainly renders as plain text. */
 export const hasMarkdownSyntax = (text: string): boolean => {
