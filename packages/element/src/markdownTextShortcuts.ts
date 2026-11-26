@@ -1,6 +1,7 @@
 /**
  * KuszCanvas: Ctrl/Cmd + B, I and U in the text editor toggle Markdown
- * markers (`**`, `*`, `<u>…</u>`) around the selection.
+ * markers (`**`, `*`, `<u>…</u>`) around the selection; Enter in a list
+ * item starts the next item (`continueMarkdownList`).
  *
  * Pure: takes the editor's value and selection, returns the edit. The editor
  * applies it (see `wysiwyg/textWysiwyg.markdown.ts`).
@@ -351,4 +352,86 @@ export const toggleMarkdownStyle = (
     };
   });
   return toEdit(value, changes, [selectionStart, selectionEnd]);
+};
+
+/** a list item's prefix: quote markers, indent, marker, spacing, checkbox */
+const LIST_PREFIX =
+  /^((?: {0,3}>[ ]?)*)(\s*)([-*+]|\d{1,9}[.)])(\s+)(\[[ xX]\]\s*)?$/;
+
+const nextListMarker = (marker: string) => {
+  const ordered = /^(\d+)([.)])$/.exec(marker);
+  return ordered ? `${Number(ordered[1]) + 1}${ordered[2]}` : marker;
+};
+
+/**
+ * Enter at a caret inside a list item's content: the new line starts the
+ * next item (same indent and quote markers, the next number, an open
+ * checkbox for a task). Enter in an empty item ends the list instead,
+ * leaving only its quote markers.
+ *
+ * Returns `null` when Enter should insert a plain newline: a selection, a
+ * line that isn't a list item, or a caret inside the item's marker.
+ */
+export const continueMarkdownList = (
+  value: string,
+  selectionStart: number,
+  selectionEnd: number,
+): MarkdownStyleEdit | null => {
+  if (typeof value !== "string") {
+    throw new Error("continueMarkdownList: value must be a string");
+  }
+  if (
+    !Number.isInteger(selectionStart) ||
+    !Number.isInteger(selectionEnd) ||
+    selectionStart < 0 ||
+    selectionStart > selectionEnd ||
+    selectionEnd > value.length
+  ) {
+    throw new Error(
+      "continueMarkdownList: selection must be integers within the value",
+    );
+  }
+  if (selectionStart !== selectionEnd) {
+    return null;
+  }
+  const caret = selectionStart;
+  const lineStart = value.lastIndexOf("\n", caret - 1) + 1;
+  const newline = value.indexOf("\n", caret);
+  const lineEnd = newline === -1 ? value.length : newline;
+  const lineIndex = value.slice(0, lineStart).split("\n").length - 1;
+  // the parser decides what is a list item (not a table, rule or wrap tail)
+  const parsed = parseMarkdownText(value)[lineIndex];
+  if (!parsed?.marker || caret < lineStart + parsed.contentStart) {
+    return null;
+  }
+  const line = value.slice(lineStart, lineEnd);
+  const prefix = LIST_PREFIX.exec(line.slice(0, parsed.contentStart));
+  if (!prefix) {
+    return null;
+  }
+  const [, quote, indent, marker, spacing] = prefix;
+
+  if (!line.slice(parsed.contentStart).trim()) {
+    return {
+      value: value.slice(0, lineStart) + quote + value.slice(lineEnd),
+      selectionStart: lineStart + quote.length,
+      selectionEnd: lineStart + quote.length,
+      replaceStart: lineStart,
+      replaceEnd: lineEnd,
+      replacement: quote,
+    };
+  }
+
+  const replacement = `\n${quote}${indent}${nextListMarker(marker)}${spacing}${
+    parsed.marker.task ? "[ ] " : ""
+  }`;
+  const next = caret + replacement.length;
+  return {
+    value: value.slice(0, caret) + replacement + value.slice(caret),
+    selectionStart: next,
+    selectionEnd: next,
+    replaceStart: caret,
+    replaceEnd: caret,
+    replacement,
+  };
 };

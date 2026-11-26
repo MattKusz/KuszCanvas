@@ -90,6 +90,37 @@ describe("appendMarkdownPaintOpsToSvg", () => {
     expect(circle.getAttribute("r")).toBe("2");
   });
 
+  it("writes a checkbox as a stroked square, with a tick when done", () => {
+    const checkbox = (checked: boolean): MarkdownPaintOp => ({
+      kind: "checkbox",
+      line: 0,
+      x: 3,
+      y: 4,
+      size: 16,
+      checked,
+      lineWidth: 1.2,
+      radius: 3.2,
+      color: "#123456",
+    });
+    const open = render([checkbox(false)]);
+    const box = open.querySelector("rect")!;
+    expect(box.getAttribute("x")).toBe("3");
+    expect(box.getAttribute("width")).toBe("16");
+    expect(box.getAttribute("rx")).toBe("3.2");
+    expect(box.getAttribute("fill")).toBe("none");
+    expect(box.getAttribute("stroke")).toBe("#123456");
+    expect(box.getAttribute("stroke-width")).toBe("1.2");
+    expect(open.querySelector("polyline")).toBeNull();
+
+    const done = render([checkbox(true)]);
+    // one node per op: the chalk export layers nodes by op
+    expect(done.children).toHaveLength(1);
+    const tick = done.querySelector("polyline")!;
+    expect(tick.getAttribute("fill")).toBe("none");
+    expect(tick.getAttribute("stroke")).toBe("#123456");
+    expect(tick.getAttribute("points")!.split(" ")).toHaveLength(3);
+  });
+
   it("validates its inputs", () => {
     const parent = document.createElementNS(SVG_NS, "g");
     expect(() =>

@@ -93,6 +93,7 @@ export * from "./markdownTextMode";
 export * from "./markdownTextPreview";
 export * from "./markdownTextRender";
 export * from "./markdownTextShortcuts";
+export * from "./markdownTaskToggle";
 export * from "./mutateElement";
 export * from "./newElement";
 export * from "./positionElementsOnGrid";

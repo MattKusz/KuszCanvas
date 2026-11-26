@@ -31,6 +31,16 @@ export const MARKDOWN_MARK_ALPHA = Object.freeze({
   tableHeader: 0.06,
 });
 
+/** Checkbox corner radius and tick, as fractions of the box size. */
+export const MARKDOWN_CHECKBOX = Object.freeze({
+  radius: 0.2,
+  tick: Object.freeze([
+    [0.22, 0.52],
+    [0.42, 0.72],
+    [0.78, 0.3],
+  ] as const),
+});
+
 /** Decoration offsets from the baseline, in em. */
 export const MARKDOWN_DECORATION = Object.freeze({
   underlineOffset: 0.12,
@@ -82,6 +92,20 @@ export type MarkdownPaintOp = Readonly<
       cx: number;
       cy: number;
       r: number;
+      color: string;
+    }
+  | {
+      /** a task's box, stroked; a done task's also gets a tick */
+      kind: "checkbox";
+      /** the visual line it sits on (for hit-testing clicks) */
+      line: number;
+      /** top-left corner */
+      x: number;
+      y: number;
+      size: number;
+      checked: boolean;
+      lineWidth: number;
+      radius: number;
       color: string;
     }
   | {
@@ -339,6 +363,21 @@ export const getMarkdownPaintOps = (
         color,
       });
     }
+    if (line.checkbox) {
+      const { size } = line.checkbox;
+      ops.push({
+        kind: "checkbox",
+        line: line.top,
+        x: lineX + line.checkbox.x,
+        // centred where a bullet dot is
+        y: baseline + fontSize * MARKDOWN_DECORATION.bulletCentre - size / 2,
+        size,
+        checked: line.checkbox.checked,
+        lineWidth: Math.max(1, fontSize * MARKDOWN_DECORATION.thickness),
+        radius: size * MARKDOWN_CHECKBOX.radius,
+        color,
+      });
+    }
     for (const segment of line.segments) {
       pushSegment(ops, segment, lineX, textTop, baseline, options);
     }
@@ -384,6 +423,31 @@ export const drawMarkdownText = (
       context.beginPath();
       context.arc(op.cx, op.cy, op.r, 0, Math.PI * 2);
       context.fill();
+    } else if (op.kind === "checkbox") {
+      context.strokeStyle = op.color;
+      context.lineWidth = op.lineWidth;
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.beginPath();
+      if (typeof context.roundRect === "function") {
+        context.roundRect(op.x, op.y, op.size, op.size, op.radius);
+      } else {
+        context.rect(op.x, op.y, op.size, op.size);
+      }
+      context.stroke();
+      if (op.checked) {
+        context.beginPath();
+        MARKDOWN_CHECKBOX.tick.forEach(([u, v], index) => {
+          const x = op.x + u * op.size;
+          const y = op.y + v * op.size;
+          if (index === 0) {
+            context.moveTo(x, y);
+          } else {
+            context.lineTo(x, y);
+          }
+        });
+        context.stroke();
+      }
     } else {
       context.font = op.font;
       context.fillText(op.text, op.x, op.y);

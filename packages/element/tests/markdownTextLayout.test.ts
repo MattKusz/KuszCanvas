@@ -113,6 +113,49 @@ describe("layoutMarkdownText", () => {
     expect(line.bullet?.kind).toBe("dot");
     expect(line.segments[0].x).toBe(1.4 * EM);
     expect(line.width).toBe(1.4 * EM + 40);
+    expect(line.checkbox).toBeNull();
+  });
+
+  it("draws a bullet task's checkbox in place of the dot", () => {
+    const [open, done] = layoutMarkdownText(
+      "- [ ] ab\n- [x] cd",
+      FONT,
+      measure,
+    )!.lines;
+    expect(open.bullet).toBeNull();
+    // centred where the dot would be (0.55 em), 0.8 em square
+    expect(open.checkbox).toEqual({
+      x: 0.15 * EM,
+      size: 0.8 * EM,
+      checked: false,
+    });
+    expect(done.checkbox?.checked).toBe(true);
+    // the content keeps the bullet's hanging indent
+    expect(open.segments[0].x).toBe(1.4 * EM);
+    expect(open.segments.map((segment) => segment.text).join("")).toBe("ab");
+  });
+
+  it("puts an ordered task's checkbox between the label and the content", () => {
+    const line = layoutMarkdownText("1. [ ] ab", FONT, measure)!.lines[0];
+    expect(line.bullet?.kind).toBe("label");
+    expect(line.checkbox?.x).toBe(1.4 * EM);
+    expect(line.segments[0].x).toBeCloseTo((1.4 + 0.8 + 0.45) * EM, 9);
+  });
+
+  it("keeps an empty task's width to its checkbox", () => {
+    const line = layoutMarkdownText("- [ ]", FONT, measure)!.lines[0];
+    expect(line.segments).toEqual([]);
+    expect(line.width).toBe(1.4 * EM);
+  });
+
+  it("wraps task content inside its hanging indent", () => {
+    const lines = wrapMarkdownText(
+      "- [ ] aaaa bbbb",
+      FONT,
+      1.4 * EM + 45,
+      measure,
+    );
+    expect(lines.map((line) => line.text)).toEqual(["- [ ] aaaa", "bbbb"]);
   });
 
   it("indents a wrapped continuation like its item, using the source", () => {

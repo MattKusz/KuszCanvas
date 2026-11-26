@@ -411,6 +411,7 @@ import { AppClipboard } from "./App.clipboard";
 import { AppText } from "./App.text";
 import { AppTextTool } from "./App.textTool";
 import { AppBucketFill } from "./App.bucketFill";
+import { AppMarkdownTasks } from "./App.markdownTasks"; // KuszCanvas
 import { AppToolDrag, TOOL_DRAG_PREVIEW_OPACITY } from "./App.toolDrag";
 import { AppCursor } from "./App.cursor";
 import { AppDrawShape } from "./App.drawshape";
@@ -704,6 +705,8 @@ class App extends React.Component<AppProps, AppState> {
   public onStateChange: OnStateChange = this.appStateObserver.onStateChange;
 
   public bucketFill: AppBucketFill = new AppBucketFill(this);
+  // KuszCanvas: click a Markdown task checkbox to toggle it
+  public markdownTasks: AppMarkdownTasks = new AppMarkdownTasks(this);
   public duplicate: AppDuplicate = new AppDuplicate(this, {
     getPointerCount: () => gesture.pointers.size,
   });
@@ -5010,6 +5013,7 @@ class App extends React.Component<AppProps, AppState> {
       // would resolve it as a drag.
       this.bucketFill.cancel();
       this.textTool.cancel();
+      this.markdownTasks.cancel(); // KuszCanvas
     }
 
     const wasMultiTouchGesture = gesture.pointers.size >= 2;
@@ -6859,6 +6863,16 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
+    // KuszCanvas: double-clicking a task checkbox toggles it twice, and
+    // must not open the text editor
+    const doubleClickScenePointer = viewportCoordsToSceneCoords(
+      event,
+      this.state,
+    );
+    if (this.markdownTasks.hitTest(doubleClickScenePointer)) {
+      return;
+    }
+
     if (
       //zsviczian - double click eraser
       this.state.penMode &&
@@ -7975,6 +7989,9 @@ class App extends React.Component<AppProps, AppState> {
         this.setState({ showHyperlinkPopup: "info" });
       } else if (this.state.activeTool.type === "text") {
         this.cursor.set(this.textTool.cursorFor(textToolTarget));
+      } else if (this.markdownTasks.hitTest(scenePointer)) {
+        // KuszCanvas: a task checkbox toggles on click
+        this.cursor.set(CURSOR_TYPE.POINTER);
       } else if (
         !event[KEYS.CTRL_OR_CMD] &&
         this.selection.isHittingCommonBoundingBoxOfSelectedElements(
@@ -8495,6 +8512,11 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     if (this.handleDraggingScrollBar(event, pointerDownState)) {
+      return;
+    }
+
+    // KuszCanvas: a press on a task checkbox toggles it on release
+    if (this.markdownTasks.handlePointerDown(event, pointerDownState.origin)) {
       return;
     }
 
@@ -11908,6 +11930,7 @@ class App extends React.Component<AppProps, AppState> {
     // a context menu during a press (touch long-press) means the user is
     // not committing a bucket click
     this.bucketFill.cancel();
+    this.markdownTasks.cancel(); // KuszCanvas
 
     if (
       (pointer.pointerType === "touch" ||

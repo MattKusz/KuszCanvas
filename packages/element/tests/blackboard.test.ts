@@ -308,6 +308,19 @@ describe("getMarkdownOpChalkLayer", () => {
         color: "#fff",
       }),
     ).toBe("stroke");
+    expect(
+      getMarkdownOpChalkLayer({
+        kind: "checkbox",
+        line: 0,
+        x: 0,
+        y: 0,
+        size: 16,
+        checked: true,
+        lineWidth: 1,
+        radius: 3,
+        color: "#fff",
+      }),
+    ).toBe("stroke");
   });
 
   it("rejects a rect without a known role", () => {

@@ -34,8 +34,12 @@ export type MarkdownRun = Readonly<{
   style: MarkdownInlineStyle;
 }>;
 
+/** A task list item's checkbox: `[ ]` open, `[x]` done; `null` = no checkbox. */
+export type MarkdownTask = "open" | "done" | null;
+
 export type MarkdownListMarker = Readonly<
-  { kind: "bullet" } | { kind: "ordered"; label: string }
+  | { kind: "bullet"; task: MarkdownTask }
+  | { kind: "ordered"; label: string; task: MarkdownTask }
 >;
 
 export type MarkdownTableAlign = "left" | "center" | "right";
@@ -105,6 +109,16 @@ const styleFromFlags = (flags: number): MarkdownInlineStyle => {
 };
 
 export const PLAIN_MARKDOWN_STYLE = styleFromFlags(0);
+
+const withStrike = (style: MarkdownInlineStyle): MarkdownInlineStyle =>
+  styleFromFlags(
+    (style.bold ? BOLD : 0) |
+      (style.italic ? ITALIC : 0) |
+      STRIKE |
+      (style.underline ? UNDERLINE : 0) |
+      (style.highlight ? HIGHLIGHT : 0) |
+      (style.code ? CODE : 0),
+  );
 
 const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
 const WHITESPACE = /\s/;
@@ -391,6 +405,8 @@ const BLANK_LINE = /^\s*$/;
 const QUOTE_PREFIX = /^ {0,3}>[ ]?/;
 const BULLET_ITEM = /^(\s*)([-*+])(\s+)/;
 const ORDERED_ITEM = /^(\s*)(\d{1,9}[.)])(\s+)/;
+// GFM task checkbox right after a list marker: `[ ]`, `[x]` or `[X]`
+const TASK_CHECKBOX = /^\[([ xX])\](?:\s+|$)/;
 const HEADING = /^ {0,3}#{1,6}(\s|$)/;
 const FENCE = /^ {0,3}(```|~~~)/;
 const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
@@ -656,15 +672,22 @@ export const parseMarkdownText = (
       if (!listStack.length || listStack[listStack.length - 1] < indent) {
         listStack.push(indent);
       }
+      const markerEnd = quote.offset + listMatch[0].length;
+      const checkbox = TASK_CHECKBOX.exec(line.slice(markerEnd));
+      const task: MarkdownTask = checkbox
+        ? checkbox[1] === " "
+          ? "open"
+          : "done"
+        : null;
       blocks.push({
         kind: "text",
         literal: false,
         quoteDepth: quote.depth,
         listLevel: listStack.length,
         marker: bullet
-          ? { kind: "bullet" }
-          : { kind: "ordered", label: ordered![2] },
-        contentStart: quote.offset + listMatch[0].length,
+          ? { kind: "bullet", task }
+          : { kind: "ordered", label: ordered![2], task },
+        contentStart: markerEnd + (checkbox ? checkbox[0].length : 0),
       });
       groupOf[index] = groupCount++;
       openGroup = groupOf[index];
@@ -711,7 +734,11 @@ export const parseMarkdownText = (
     const contents = members.map((index) =>
       sourceLines[index].slice(blocks[index].contentStart),
     );
-    const runs = parseMarkdownInline(contents.join("\n"));
+    let runs = parseMarkdownInline(contents.join("\n"));
+    // a done task is struck through, as in Obsidian's default theme
+    if (blocks[members[0]].marker?.task === "done") {
+      runs = runs.map((run) => ({ ...run, style: withStrike(run.style) }));
+    }
     let offset = 0;
     members.forEach((index, k) => {
       const contentLength = contents[k].length;

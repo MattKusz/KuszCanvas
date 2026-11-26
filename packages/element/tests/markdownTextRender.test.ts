@@ -117,6 +117,21 @@ describe("drawMarkdownText", () => {
     expect(texts(draw("1. a"))).toEqual(["1.", "a"]);
   });
 
+  it("strokes a checkbox for a task, with a tick once it is done", () => {
+    const count = (calls: Call[], op: string) =>
+      calls.filter((call) => call.op === op).length;
+    const open = draw("- [ ] a");
+    expect(count(open, "arc")).toBe(0);
+    expect(count(open, "roundRect")).toBe(1);
+    expect(count(open, "stroke")).toBe(1);
+    expect(count(open, "lineTo")).toBe(0);
+    const done = draw("- [x] a");
+    expect(count(done, "stroke")).toBe(2);
+    expect(count(done, "lineTo")).toBe(2);
+    // a done task's text is struck through
+    expect(count(done, "fillRect")).toBe(1);
+  });
+
   it("offsets each line for centre and right alignment", () => {
     const layout = layoutMarkdownText("**a**\n**abc**", FONT, measure)!;
     const calls = draw("**a**\n**abc**", {
@@ -184,6 +199,26 @@ describe("getMarkdownPaintOps", () => {
     expect(bars.every((op) => op.kind === "rect" && op.height === 25)).toBe(
       true,
     );
+  });
+
+  it("centres a checkbox on the bullet's line, in the text colour", () => {
+    const [open, done] = ["- [ ] a", "\n- [x] b"].map((text) => {
+      const op = ops(text).find((candidate) => candidate.kind === "checkbox");
+      if (op?.kind !== "checkbox") {
+        throw new Error("expected a checkbox op");
+      }
+      return op;
+    });
+    expect(open).toMatchObject({
+      x: 3,
+      size: 16,
+      checked: false,
+      color: "#1e1e1e",
+    });
+    // centred where a bullet dot would be: baseline - 0.32 em
+    expect(open.y + open.size / 2).toBeCloseTo(18 - 0.32 * 20, 9);
+    expect(done.checked).toBe(true);
+    expect(done.y).toBeCloseTo(open.y + 25, 9);
   });
 });
 

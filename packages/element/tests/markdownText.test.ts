@@ -138,14 +138,53 @@ describe("parseMarkdownText", () => {
     expect(describeRuns(lines[2].runs)).toBe("b**");
   });
 
+  it("parses task list items after the list marker", () => {
+    const lines = parseMarkdownText(
+      "- [ ] open\n* [x] done\n1. [X] numbered\n- [ ]",
+    );
+    expect(lines.map((line) => line.marker)).toEqual([
+      { kind: "bullet", task: "open" },
+      { kind: "bullet", task: "done" },
+      { kind: "ordered", label: "1.", task: "done" },
+      { kind: "bullet", task: "open" },
+    ]);
+    // the checkbox is a marker: content starts after it
+    expect(lines[0].contentStart).toBe(6);
+    expect(visibleText(lines[0].runs)).toBe("open");
+    expect(lines[3].contentStart).toBe(5);
+    expect(lines[3].runs).toEqual([]);
+  });
+
+  it("strikes through a done task, continuation lines included", () => {
+    const lines = parseMarkdownText("- [x] done **bold**\n  more\n- [ ] open");
+    expect(describeRuns(lines[0].runs)).toBe(
+      "[done :strike][bold:bold+strike]",
+    );
+    expect(describeRuns(lines[1].runs)).toBe("[more:strike]");
+    expect(describeRuns(lines[2].runs)).toBe("open");
+  });
+
+  it("needs a list marker, a single space or x, and whitespace after", () => {
+    const markers = parseMarkdownText(
+      "[ ] bare\n- [] empty\n- [y] other\n- [ ]tight\n- [  ] wide",
+    ).map((line) => line.marker);
+    expect(markers).toEqual([
+      null,
+      { kind: "bullet", task: null },
+      { kind: "bullet", task: null },
+      { kind: "bullet", task: null },
+      { kind: "bullet", task: null },
+    ]);
+  });
+
   it("parses bullet and ordered list items", () => {
     const lines = parseMarkdownText("- one\n* two\n+ three\n1. first\n12) x");
     expect(lines.map((line) => line.marker)).toEqual([
-      { kind: "bullet" },
-      { kind: "bullet" },
-      { kind: "bullet" },
-      { kind: "ordered", label: "1." },
-      { kind: "ordered", label: "12)" },
+      { kind: "bullet", task: null },
+      { kind: "bullet", task: null },
+      { kind: "bullet", task: null },
+      { kind: "ordered", label: "1.", task: null },
+      { kind: "ordered", label: "12)", task: null },
     ]);
     expect(lines.every((line) => line.listLevel === 1)).toBe(true);
     expect(visibleText(lines[0].runs)).toBe("one");
@@ -175,7 +214,7 @@ describe("parseMarkdownText", () => {
     expect(lines.map((line) => line.quoteDepth)).toEqual([1, 2, 1]);
     expect(visibleText(lines[0].runs)).toBe("quote");
     expect(visibleText(lines[1].runs)).toBe("nested");
-    expect(lines[2].marker).toEqual({ kind: "bullet" });
+    expect(lines[2].marker).toEqual({ kind: "bullet", task: null });
   });
 
   it("renders headings and horizontal rules literally", () => {

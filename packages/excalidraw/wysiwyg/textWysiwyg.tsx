@@ -78,6 +78,7 @@ import {
 
 // KuszCanvas -- Markdown shortcuts and live preview
 import {
+  applyMarkdownListContinuation,
   applyMarkdownShortcut,
   createLiveTextPreview,
 } from "./textWysiwyg.markdown";
@@ -560,7 +561,12 @@ export const textWysiwyg = ({
   };
 
   const editable = ownerDocument.createElement("textarea");
-  attachInlineLinkSuggester(editable, undefined, excalidrawContainer); //zsviczian
+  // KuszCanvas: kept so Enter in a list leaves an open suggester alone
+  const linkSuggester = attachInlineLinkSuggester(
+    editable,
+    undefined,
+    excalidrawContainer,
+  ); //zsviczian
 
   editable.dir = "auto";
   editable.tabIndex = 0;
@@ -904,6 +910,13 @@ export const textWysiwyg = ({
   editable.onkeydown = (event) => {
     if (applyMarkdownShortcut(event, editable)) {
       return; // KuszCanvas: Ctrl/Cmd + B, I, U
+    }
+    if (
+      applyMarkdownListContinuation(event, editable, () =>
+        linkSuggester.isBlockingKeys(),
+      )
+    ) {
+      return; // KuszCanvas: Enter continues a Markdown list
     }
     if (!event.shiftKey && actionZoomIn.keyTest(event)) {
       event.preventDefault();

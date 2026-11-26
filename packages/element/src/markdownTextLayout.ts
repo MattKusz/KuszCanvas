@@ -38,6 +38,9 @@ export const MARKDOWN_TEXT_METRICS = Object.freeze({
   bulletOffset: 0.55,
   bulletRadius: 0.13,
   orderedGap: 0.35,
+  checkboxSize: 0.8,
+  /** between a checkbox and the content (a bullet task's matches the dot's) */
+  checkboxGap: 0.45,
   codePadding: 0.2,
   tableCellPadding: 0.5,
 });
@@ -60,6 +63,13 @@ export type MarkdownBullet = Readonly<
   | { kind: "label"; text: string; x: number; width: number }
 >;
 
+/** A task item's checkbox: a `size` square whose left edge is `x`. */
+export type MarkdownCheckbox = Readonly<{
+  x: number;
+  size: number;
+  checked: boolean;
+}>;
+
 export type MarkdownTableLine = Readonly<{
   columnXs: readonly number[];
   columnWidths: readonly number[];
@@ -78,6 +88,7 @@ export type MarkdownVisualLine = Readonly<{
   width: number;
   segments: readonly MarkdownSegment[];
   bullet: MarkdownBullet | null;
+  checkbox: MarkdownCheckbox | null;
   /** left x of each quote bar */
   quoteBars: readonly number[];
   table: MarkdownTableLine | null;
@@ -187,6 +198,7 @@ const buildSegments = (
 type LineGeometry = {
   contentX: number;
   bullet: MarkdownBullet | null;
+  checkbox: MarkdownCheckbox | null;
   quoteBars: number[];
 };
 
@@ -211,23 +223,33 @@ const getLineGeometries = (
         depth * quoteIndent + MARKDOWN_TEXT_METRICS.quoteBarOffset * fontSize,
     );
     if (line.listLevel === 0) {
-      return { contentX: quoteX, bullet: null, quoteBars };
+      return { contentX: quoteX, bullet: null, checkbox: null, quoteBars };
     }
     const itemStart = quoteX + (line.listLevel - 1) * listIndent;
     if (!line.marker) {
       return {
         contentX: itemContentX.get(line.listLevel) ?? itemStart + listIndent,
         bullet: null,
+        checkbox: null,
         quoteBars,
       };
     }
     let contentX = itemStart + listIndent;
-    let bullet: MarkdownBullet;
+    let bullet: MarkdownBullet | null;
+    let checkbox: MarkdownCheckbox | null = null;
+    const task = line.marker.task;
+    const checkboxSize = MARKDOWN_TEXT_METRICS.checkboxSize * fontSize;
     if (line.marker.kind === "bullet") {
-      bullet = {
-        kind: "dot",
-        cx: itemStart + MARKDOWN_TEXT_METRICS.bulletOffset * fontSize,
-      };
+      const dotX = itemStart + MARKDOWN_TEXT_METRICS.bulletOffset * fontSize;
+      // a task's checkbox replaces the dot, as in Obsidian
+      bullet = task ? null : { kind: "dot", cx: dotX };
+      if (task) {
+        checkbox = {
+          x: dotX - checkboxSize / 2,
+          size: checkboxSize,
+          checked: task === "done",
+        };
+      }
     } else {
       const width = measure(line.marker.label, font);
       contentX = Math.max(contentX, itemStart + width + gap);
@@ -237,6 +259,15 @@ const getLineGeometries = (
         x: contentX - gap - width,
         width,
       };
+      // the checkbox follows the label; the content moves past it
+      if (task) {
+        checkbox = {
+          x: contentX,
+          size: checkboxSize,
+          checked: task === "done",
+        };
+        contentX += checkboxSize + MARKDOWN_TEXT_METRICS.checkboxGap * fontSize;
+      }
     }
     itemContentX.set(line.listLevel, contentX);
     // deeper levels belong to the previous item
@@ -245,7 +276,7 @@ const getLineGeometries = (
         itemContentX.delete(level);
       }
     }
-    return { contentX, bullet, quoteBars };
+    return { contentX, bullet, checkbox, quoteBars };
   });
 };
 
@@ -370,6 +401,7 @@ const layoutTables = (
         width: tableWidth,
         segments,
         bullet: null,
+        checkbox: null,
         quoteBars: [],
         table: {
           columnXs,
@@ -428,7 +460,7 @@ export const layoutMarkdownText = (
     if (tableLine) {
       return tableLine;
     }
-    const { contentX, bullet, quoteBars } = geometries[index];
+    const { contentX, bullet, checkbox, quoteBars } = geometries[index];
     const { segments, width } = buildSegments(
       line.runs,
       line.contentStart,
@@ -440,9 +472,10 @@ export const layoutMarkdownText = (
     return {
       top: index,
       height: 1,
-      width: segments.length || bullet ? contentX + width : 0,
+      width: segments.length || bullet || checkbox ? contentX + width : 0,
       segments,
       bullet,
+      checkbox,
       quoteBars,
       table: null,
     };

@@ -3,6 +3,8 @@
  *
  * - `applyMarkdownShortcut`: Ctrl/Cmd + B, I and U toggle `**`, `*` and
  *   `<u>…</u>` around the selection.
+ * - `applyMarkdownListContinuation`: Enter in a list item starts the next
+ *   item; Enter in an empty item ends the list.
  * - `createLiveTextPreview`: draws the edited text on a canvas under the
  *   textarea and hides the textarea's own glyphs (its caret and selection
  *   stay visible). Two triggers:
@@ -11,7 +13,7 @@
  *   - blackboard mode: chalk text renders as chalk while it is typed (plain
  *     or Markdown), with the element's grain so nothing shifts on commit.
  *
- * The shortcut is off unless the host enables Markdown text rendering.
+ * The shortcuts are off unless the host enables Markdown text rendering.
  * Layout, edits and the paint decision are pure functions in
  * `@excalidraw/element`; this file only applies them to the DOM.
  */
@@ -26,6 +28,7 @@ import {
 } from "@excalidraw/common";
 import {
   alignWrappedLines,
+  continueMarkdownList,
   drawChalked,
   drawMarkdownText,
   drawPlainTextLines,
@@ -44,7 +47,7 @@ import {
   toggleMarkdownStyle,
 } from "@excalidraw/element";
 
-import type { ChalkLayer } from "@excalidraw/element";
+import type { ChalkLayer, MarkdownStyleEdit } from "@excalidraw/element";
 
 import type { ExcalidrawTextElement } from "@excalidraw/element/types";
 
@@ -89,16 +92,68 @@ export const applyMarkdownShortcut = (
   );
   if (edit.value !== editable.value) {
     // insertText keeps the edit on the textarea's native undo stack
-    editable.setSelectionRange(edit.replaceStart, edit.replaceEnd);
-    const inserted =
-      typeof editable.ownerDocument.execCommand === "function" &&
-      editable.ownerDocument.execCommand("insertText", false, edit.replacement);
-    if (!inserted || editable.value !== edit.value) {
-      editable.value = edit.value;
-      editable.dispatchEvent(new Event("input"));
-    }
+    applyEdit(editable, edit);
+  } else {
+    editable.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+  }
+  return true;
+};
+
+/** Replaces `[replaceStart, replaceEnd)`, keeping native undo where it can. */
+const applyEdit = (editable: HTMLTextAreaElement, edit: MarkdownStyleEdit) => {
+  editable.setSelectionRange(edit.replaceStart, edit.replaceEnd);
+  const inserted =
+    typeof editable.ownerDocument.execCommand === "function" &&
+    editable.ownerDocument.execCommand("insertText", false, edit.replacement);
+  if (!inserted || editable.value !== edit.value) {
+    editable.value = edit.value;
+    editable.dispatchEvent(new Event("input"));
   }
   editable.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+};
+
+/**
+ * Handles plain Enter in a list item: starts the next item, or ends the list
+ * on an empty one. Returns `true` when it consumed the event.
+ *
+ * `isSuggesterOpen` reports whether the host's link suggester owns Enter.
+ */
+export const applyMarkdownListContinuation = (
+  event: KeyboardEvent,
+  editable: HTMLTextAreaElement,
+  isSuggesterOpen: () => boolean,
+): boolean => {
+  if (!event || !editable || typeof isSuggesterOpen !== "function") {
+    throw new Error(
+      "applyMarkdownListContinuation: event, editable and isSuggesterOpen are required",
+    );
+  }
+  if (
+    event.key !== KEYS.ENTER ||
+    event.shiftKey ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.isComposing ||
+    // IME confirmations arrive as keyCode 229 in some browsers
+    event.keyCode === 229 ||
+    event.defaultPrevented ||
+    !isMarkdownTextRenderingEnabled() ||
+    isSuggesterOpen()
+  ) {
+    return false;
+  }
+  const edit = continueMarkdownList(
+    editable.value,
+    editable.selectionStart,
+    editable.selectionEnd,
+  );
+  if (!edit) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  applyEdit(editable, edit);
   return true;
 };
 

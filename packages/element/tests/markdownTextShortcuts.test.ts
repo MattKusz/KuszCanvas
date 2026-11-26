@@ -1,4 +1,5 @@
 import {
+  continueMarkdownList,
   getMarkdownShortcutStyle,
   toggleMarkdownStyle,
   type MarkdownShortcutStyle,
@@ -151,5 +152,72 @@ describe("getMarkdownShortcutStyle", () => {
 
   it("validates its input", () => {
     expect(() => getMarkdownShortcutStyle(null as any)).toThrow(/event/);
+  });
+});
+
+describe("continueMarkdownList (Enter in a list)", () => {
+  /** applies Enter at the `|` caret; returns the marked result or null */
+  const enter = (marked: string) => {
+    const { value, start, end } = parse(marked);
+    const edit = continueMarkdownList(value, start, end);
+    if (!edit) {
+      return null;
+    }
+    // the edit is also one replacement of the original value
+    expect(
+      value.slice(0, edit.replaceStart) +
+        edit.replacement +
+        value.slice(edit.replaceEnd),
+    ).toBe(edit.value);
+    return mark(edit.value, edit.selectionStart, edit.selectionEnd);
+  };
+
+  it("starts the next bullet with the same marker and indentation", () => {
+    expect(enter("- one|")).toBe("- one\n- |");
+    expect(enter("* one|")).toBe("* one\n* |");
+    expect(enter("a\n  + nested|\nb")).toBe("a\n  + nested\n  + |\nb");
+  });
+
+  it("numbers the next ordered item", () => {
+    expect(enter("1. one|")).toBe("1. one\n2. |");
+    expect(enter("9) nine|")).toBe("9) nine\n10) |");
+  });
+
+  it("continues a task list with an open checkbox", () => {
+    expect(enter("- [x] done|")).toBe("- [x] done\n- [ ] |");
+    expect(enter("1. [ ] a|")).toBe("1. [ ] a\n2. [ ] |");
+  });
+
+  it("keeps quote markers", () => {
+    expect(enter("> - quoted|")).toBe("> - quoted\n> - |");
+  });
+
+  it("moves the text after the caret into the new item", () => {
+    expect(enter("- ab|cd")).toBe("- ab\n- |cd");
+  });
+
+  it("ends the list on an empty item", () => {
+    expect(enter("- a\n- |")).toBe("- a\n|");
+    expect(enter("- a\n- [ ] |")).toBe("- a\n|");
+    expect(enter("> - |")).toBe("> |");
+    expect(enter("- a\n- |\nb")).toBe("- a\n|\nb");
+  });
+
+  it("leaves Enter alone outside a list item's content", () => {
+    expect(enter("plain|")).toBeNull();
+    expect(enter("-not a list|")).toBeNull();
+    expect(enter("|- a")).toBeNull();
+    expect(enter("-| a")).toBeNull();
+    expect(enter("| a\n- b")).toBeNull();
+  });
+
+  it("leaves Enter alone with a selection", () => {
+    expect(continueMarkdownList("- abc", 2, 4)).toBeNull();
+  });
+
+  it("validates its inputs", () => {
+    expect(() => continueMarkdownList(1 as unknown as string, 0, 0)).toThrow();
+    expect(() => continueMarkdownList("- a", 4, 4)).toThrow();
+    expect(() => continueMarkdownList("- a", 2, 1)).toThrow();
   });
 });

@@ -82,6 +82,7 @@ const rawLine = (
         ]
       : [],
     bullet: null,
+    checkbox: null,
     quoteBars: [],
     table: null,
   };

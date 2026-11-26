@@ -3,12 +3,15 @@
  * so exported text matches the canvas rendering.
  */
 import { SVG_NS } from "@excalidraw/common";
-import { MARKDOWN_CODE_FONT_FAMILY } from "@excalidraw/element";
+import {
+  MARKDOWN_CHECKBOX,
+  MARKDOWN_CODE_FONT_FAMILY,
+} from "@excalidraw/element";
 
 import type { MarkdownPaintOp } from "@excalidraw/element";
 
 /**
- * Appends one node per op to `parent`.
+ * Appends one node per op to `parent` (the chalk SVG export relies on it).
  *
  * @param fontFamily the element's CSS font-family list, for non-code runs
  * @param fontSize the element's font size in px
@@ -55,6 +58,36 @@ export const appendMarkdownPaintOpsToSvg = (
       circle.setAttribute("r", `${op.r}`);
       circle.setAttribute("fill", op.color);
       parent.appendChild(circle);
+    } else if (op.kind === "checkbox") {
+      const stroke = (node: SVGElement) => {
+        node.setAttribute("fill", "none");
+        node.setAttribute("stroke", op.color);
+        node.setAttribute("stroke-width", `${op.lineWidth}`);
+        node.setAttribute("stroke-linejoin", "round");
+        node.setAttribute("stroke-linecap", "round");
+      };
+      // one node per op: box and tick share a group
+      const group = doc.createElementNS(SVG_NS, "g");
+      const box = doc.createElementNS(SVG_NS, "rect");
+      box.setAttribute("x", `${op.x}`);
+      box.setAttribute("y", `${op.y}`);
+      box.setAttribute("width", `${op.size}`);
+      box.setAttribute("height", `${op.size}`);
+      box.setAttribute("rx", `${op.radius}`);
+      stroke(box);
+      group.appendChild(box);
+      if (op.checked) {
+        const tick = doc.createElementNS(SVG_NS, "polyline");
+        tick.setAttribute(
+          "points",
+          MARKDOWN_CHECKBOX.tick
+            .map(([u, v]) => `${op.x + u * op.size},${op.y + v * op.size}`)
+            .join(" "),
+        );
+        stroke(tick);
+        group.appendChild(tick);
+      }
+      parent.appendChild(group);
     } else {
       const text = doc.createElementNS(SVG_NS, "text");
       text.textContent = op.text;

@@ -205,7 +205,7 @@ export const getMarkdownOpChalkLayer = (op: MarkdownPaintOp): ChalkLayer => {
   if (op.kind === "text") {
     return op.style.code ? "solid" : "stroke";
   }
-  if (op.kind === "circle") {
+  if (op.kind === "circle" || op.kind === "checkbox") {
     return "stroke";
   }
   const layer = MARKDOWN_RECT_LAYERS[op.role];
