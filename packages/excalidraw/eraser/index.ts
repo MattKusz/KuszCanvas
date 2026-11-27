@@ -13,6 +13,9 @@ import {
   isFreeDrawElement,
   isLineElement,
   isPointInElement,
+  isEraserIgnoredLabel,
+  isEraserOutlineOnly,
+  isEraserProtected,
 } from "@excalidraw/element";
 import {
   lineSegment,
@@ -182,7 +185,13 @@ export class EraserTrail extends AnimatedTrail {
       }
     }
 
-    return Array.from(this.elementsToErase);
+    // KuszCanvas: group expansion can add sticky notes, embeds and images;
+    // never mark them (see `isEraserProtected`)
+    const elementsMap = this.app.scene.getNonDeletedElementsMap();
+    return Array.from(this.elementsToErase).filter((id) => {
+      const element = elementsMap.get(id);
+      return !element || !isEraserProtected(element, elementsMap);
+    });
   }
 
   endPath(): void {
@@ -193,13 +202,23 @@ export class EraserTrail extends AnimatedTrail {
   }
 }
 
-const eraserTest = (
+export const eraserTest = (
   pathSegment: LineSegment<GlobalPoint>,
   element: ExcalidrawElement,
   elementsMap: ElementsMap,
   zoom: number,
 ): boolean => {
   const lastPoint = pathSegment[1];
+
+  // KuszCanvas: sticky notes, embeds and images are never erased, and
+  // touching a shape's label would reach the shape through its fill
+  if (
+    isEraserProtected(element, elementsMap) ||
+    isEraserIgnoredLabel(element, elementsMap)
+  ) {
+    return false;
+  }
+  const outlineOnly = isEraserOutlineOnly(element);
 
   // PERF: Do a quick bounds intersection test first because it's cheap
   const threshold = isFreeDrawElement(element) ? 15 : element.strokeWidth / 2;
@@ -225,6 +244,7 @@ const eraserTest = (
   // even though the eraser path segment doesn't intersect with or
   // get close to the shape's stroke
   if (
+    !outlineOnly && // KuszCanvas: shapes and frames erase at the outline only
     shouldTestInside(element) &&
     isPointInElement(lastPoint, element, elementsMap)
   ) {
@@ -290,6 +310,7 @@ const eraserTest = (
     intersectElementWithLineSegment(element, elementsMap, pathSegment, 0, true)
       .length > 0 ||
     (!!boundTextElement &&
+      !outlineOnly && // KuszCanvas: a label is inside the fill
       intersectElementWithLineSegment(
         {
           ...boundTextElement,

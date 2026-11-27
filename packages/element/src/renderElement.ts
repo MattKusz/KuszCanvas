@@ -87,6 +87,7 @@ import {
 } from "./typeChecks";
 import { getFreeDrawSvgPath } from "./freedrawPath"; // zsviczian -- persisted custom pen paths
 import { getContainingFrame } from "./frame";
+import { isEraserProtected } from "./eraser"; // KuszCanvas
 import {
   getFrameDrawableForPass,
   isShapeStyledFrame,
@@ -230,7 +231,10 @@ export const resolveElementRenderState = (
   if (
     elementsPendingErasure.has(element.id) ||
     pendingFlowchartNodes?.some((node) => node.id === element.id) ||
-    (containingFrame && elementsPendingErasure.has(containingFrame.id))
+    (containingFrame &&
+      elementsPendingErasure.has(containingFrame.id) &&
+      // KuszCanvas: sticky notes, embeds and images outlive their erased frame
+      !isEraserProtected(element, allElementsMap))
   ) {
     opacity *= ELEMENT_READY_TO_ERASE_OPACITY / 100;
   }

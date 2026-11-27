@@ -130,6 +130,8 @@ import {
   isBindingElement,
   isBindingElementType,
   isBoundToContainer,
+  getEraserOutcome, // KuszCanvas
+  isEraserClickHit, // KuszCanvas
   isFrameLikeElement,
   isImageElement,
   isEmbeddableElement,
@@ -10976,9 +10978,24 @@ class App extends React.Component<AppProps, AppState> {
             scenePointer.x,
             scenePointer.y,
           );
-          hitElements.forEach((hitElement) =>
-            this.elementsPendingErasure.add(hitElement.id),
+          // KuszCanvas: skip sticky notes, embeds and images; shapes and frames
+          // only at their outline (see `isEraserClickHit`)
+          const clickPoint = pointFrom<GlobalPoint>(
+            scenePointer.x,
+            scenePointer.y,
           );
+          hitElements
+            .filter((hitElement) =>
+              isEraserClickHit(
+                clickPoint,
+                hitElement,
+                elementsMap,
+                this.getElementHitThreshold(hitElement),
+              ),
+            )
+            .forEach((hitElement) =>
+              this.elementsPendingErasure.add(hitElement.id),
+            );
         }
         this.eraseElements();
         return;
@@ -11199,15 +11216,22 @@ class App extends React.Component<AppProps, AppState> {
       }
     });
 
+    // KuszCanvas: sticky notes, embeds and images survive, leaving an erased
+    // frame (see `getEraserOutcome`)
+    const eraseElementsMap = this.scene.getNonDeletedElementsMap();
     const elements = this.scene.getElementsIncludingDeleted().map((ele) => {
-      if (
-        this.elementsPendingErasure.has(ele.id) ||
-        (ele.frameId && this.elementsPendingErasure.has(ele.frameId)) ||
-        (isBoundToContainer(ele) &&
-          this.elementsPendingErasure.has(ele.containerId))
-      ) {
+      const outcome = getEraserOutcome(
+        ele,
+        this.elementsPendingErasure,
+        eraseElementsMap,
+      );
+      if (outcome === "delete") {
         didChange = true;
         return newElementWith(ele, { isDeleted: true });
+      }
+      if (outcome === "detachFromFrame") {
+        didChange = true;
+        return newElementWith(ele, { frameId: null });
       }
       return ele;
     });
