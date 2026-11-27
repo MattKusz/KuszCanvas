@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-Work on `master` (the whiteboard work from `kusch/whiteboard` is merged into it). Build here the engine that the sibling `../KuszCanvas-Obsidian` plugin vendors; this repo forks zsviczian/excalidraw, which forks excalidraw.
+Work on `master`. Build here the engine that the sibling `../KuszCanvas-Obsidian` plugin vendors; this repo forks zsviczian/excalidraw, which forks excalidraw.
 
 ## Module map
 
-- `packages/excalidraw/` — editor React component, published by this repo as `@zsviczian/excalidraw`; `obsidian*.ts` holds the Obsidian host integration.
+- `packages/excalidraw/` — editor React component (package `@zsviczian/excalidraw`); `obsidian*.ts` holds the Obsidian host integration.
 - `packages/element/` — element model, geometry, frames and the canvas renderer (`renderElement.ts`, `shape.ts`).
 - `packages/common/`, `packages/math/`, `packages/utils/`, `packages/fractional-indexing/`, `packages/laser-pointer/` — shared helpers; `packages/common/src/commonObsidianHost.ts` is the render-side host contract.
 - `excalidraw-app/` — web test harness, not excalidraw.com; see `excalidraw-app/CLAUDE.md`.
@@ -21,7 +21,7 @@ Work on `master` (the whiteboard work from `kusch/whiteboard` is merged into it)
 
 ## Contracts with the consumer
 
-- Renderer and host-adapter changes are an internal protocol with `../KuszCanvas-Obsidian`: bump the protocol version and update the consumer adapter in the same change. The consumer restates the number in three files listed in its `CLAUDE.md`.
+- The host adapters (`commonObsidianHost.ts`, `obsidianExcalidrawHost.ts`) are an internal protocol with `../KuszCanvas-Obsidian`: for a breaking adapter change, bump the protocol version and update the consumer adapter in the same change. Renderer changes behind an unchanged adapter need no bump, only a re-vendor. The consumer restates the number in three files listed in its `CLAUDE.md`.
 - Tests that configure the common host use `OBSIDIAN_COMMON_HOST_PROTOCOL_VERSION`, never a literal, so a bump only fails tests of the old contract.
 - The consumer vendors `packages/excalidraw/dist/obsidian/` and `types/` with its `npm run vendor:excalidraw`, which refuses a dirty engine tree. Commit before vendoring; never copy artifacts by hand or publish to npm.
 - New engine exports reach the consumer's types only after vendoring: expect `tsc` errors for them in the consumer until then, and never edit its vendored types.
@@ -29,6 +29,7 @@ Work on `master` (the whiteboard work from `kusch/whiteboard` is merged into it)
 ## Cross-file invariants
 
 - In blackboard mode a sticky note and its label keep light-theme colours (`isPaperRender` in `packages/element/src/blackboard.ts`). Anything new that paints or shows a note's colours must honour it, as the canvas renderer, SVG export, text editor and colour picker (`getColorSwatchTheme`) do.
+- Route every way of erasing (trail, click, group or frame erasure, the pending-erasure fade in `renderElement.ts`) through `packages/element/src/eraser.ts`: sticky notes, embeds and images are never erased and leave an erased frame instead, and closed shapes and frames erase only at their outline.
 - Take a new container label's alignment from `getDefaultBoundTextAlign` (sticky notes top-left, other containers centre-centre); typing, binding and `convertToExcalidrawElements` all use it.
 - After any change to the blackboard shader's output (`packages/element/src/blackboardShader.ts`), render it, set `BLACKBOARD_BASE_COLOR` in `packages/element/src/blackboard.ts` to the measured mean colour, and retune `BLACKBOARD_SVG_TEXTURE` in `packages/excalidraw/renderer/chalkSvg.ts` to the same mean, so the canvas, PNG and SVG boards match. Tests only bound the colour loosely.
 
