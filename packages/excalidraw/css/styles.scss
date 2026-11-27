@@ -947,7 +947,7 @@ body.excalidraw-cursor-resize * {
 
   .mobile-misc-tools-container {
     position: absolute;
-    top: calc(5rem - var(--editor-container-padding));
+    top: 3px; // KuszCanvas: top-right corner, centred on the toolbar row (was 5rem down)
     right: calc(var(--editor-container-padding) * -1);
     display: flex;
     flex-direction: column;
@@ -973,7 +973,7 @@ body.excalidraw-cursor-resize * {
 
   .tray-misc-tools-container {
     position: absolute;
-    top: calc(5rem - var(--editor-container-padding));
+    top: 3px; // KuszCanvas: top-right corner, centred on the toolbar row (was 5rem down)
     right: calc(var(--editor-container-padding) * -1);
     display: flex;
     flex-direction: column;
